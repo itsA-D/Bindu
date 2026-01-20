@@ -18,8 +18,7 @@ config = {
     "author": "bindu.builder@getbindu.com",
     "name": "weather_research_agent",
     "description": "Research agent that finds current weather and forecasts for any city worldwide",
-    "deployment": {"url": "http://localhost:3773", "expose": True},
-    "skills": ["skills/weather-research", "skills/weather-forecasting"]
+    "deployment": {"url": "http://localhost:3773", "expose": True}
 }
 
 # Message handler function
