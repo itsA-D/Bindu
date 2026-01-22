@@ -6,7 +6,7 @@ from bindu.penguin.bindufy import bindufy
 def handler(messages: list[dict[str, str]]) -> list[dict[str, str]]:
     """Provide premium market insights.
 
-    This handler provides premium market insights protected by the X402 paywall.
+    This handler is protected by the X402 paywall.
     """
     advice = (
         "🔮 **Premium Market Insight** 🔮\n\n"
