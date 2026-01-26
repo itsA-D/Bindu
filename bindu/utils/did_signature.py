@@ -106,13 +106,23 @@ def verify_signature(
         payload_str = json.dumps(payload, sort_keys=True)
 
         # Verify signature with public key
-        from bindu.extensions.did import DIDAgentExtension
+        import base58
+        from nacl.signing import VerifyKey
+        from nacl.exceptions import BadSignatureError
 
-        # Create temporary DID extension for verification
-        # We only need the public key for verification
-        is_valid = DIDAgentExtension.verify_signature_with_public_key(
-            message=payload_str, signature=signature, public_key=public_key
-        )
+        # Decode the base58-encoded public key and signature
+        try:
+            public_key_bytes = base58.b58decode(public_key)
+            signature_bytes = base58.b58decode(signature)
+
+            # Create verify key from public key bytes
+            verify_key = VerifyKey(public_key_bytes)
+
+            # Verify the signature
+            verify_key.verify(payload_str.encode("utf-8"), signature_bytes)
+            is_valid = True
+        except (BadSignatureError, Exception):
+            is_valid = False
 
         if not is_valid:
             logger.warning(f"Invalid DID signature for {did}")

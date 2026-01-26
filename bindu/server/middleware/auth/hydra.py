@@ -373,9 +373,9 @@ class HydraMiddleware(AuthMiddleware):
         # Special handling for Hydra-specific errors
         if "connection refused" in error_str or "timeout" in error_str:
             logger.error(f"Hydra service unavailable for {path}: {error}")
-            from bindu.common.protocol.types import ServiceUnavailableError
+            from bindu.common.protocol.types import InternalError
 
-            code, message = extract_error_fields(ServiceUnavailableError)
+            code, message = extract_error_fields(InternalError)
             return jsonrpc_error(
                 code=code,
                 message="Authentication service temporarily unavailable",
