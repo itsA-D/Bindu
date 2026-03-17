@@ -92,6 +92,15 @@ web-scraping-agent/
 **Error**: `ModuleNotFoundError: No module named 'scrapegraphpy'` or `mem0ai`
 **Solution**: Run `uv sync --extra agents` to ensure all optional dependencies are installed.
 
+#### Scraping Fails With Credit Errors
+**Error**: Messages like `insufficient credits`, `not enough credits`, or upstream `500` from ScrapeGraph.
+**Solution**: Verify your ScrapeGraph account has available credits and the key is active. Then restart the agent and retry. If needed, test with a smaller target page first.
+
+#### Agent Crashes on Startup / `ValueError` at Import
+**Error**: `ValueError: API key is required` or similar from `ScrapeGraphTools` / `Mem0Tools`.
+**Cause**: The agent initializes all three tools at startup. If any key is missing or set to a placeholder, the tool constructor raises immediately.
+**Solution**: Ensure all three keys (`SCRAPEGRAPH_API_KEY`, `MEM0_API_KEY`, `OPENROUTER_API_KEY`) are set to real values in `examples/web-scraping-agent/.env` before running.
+
 ---
 
 **Built with ❤️ using the Bindu Agent Framework**

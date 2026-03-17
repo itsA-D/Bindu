@@ -18,6 +18,7 @@ Environment:
 
 import os
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from bindu.penguin.bindufy import bindufy
@@ -32,7 +33,7 @@ agent = Agent(
         "You are a web scraping assistant. Given a URL and an optional extraction prompt, "
         "use ScrapeGraph to extract structured data from the page. Clean and format the output "
         "into JSON. Use memory to avoid re-scraping URLs you have already processed and to "
-        "remember extraction preferences for specific domains."
+        "remember extraction preferences ."
     ),
     model=OpenRouter(
         id="openai/gpt-oss-120b",
@@ -84,5 +85,6 @@ def handler(messages: list[dict[str, str]]):
         return str(result)
     return "Please provide a URL and an extraction prompt."
 
-# Bindu-fy the agent - converts it to a discoverable, interoperable Bindu agent
-bindufy(config, handler)
+if __name__ == "__main__":
+    # Bindu-fy the agent — converts it to a discoverable, interoperable Bindu agent
+    bindufy(config, handler)
