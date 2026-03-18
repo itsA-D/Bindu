@@ -22,7 +22,6 @@ from __future__ import annotations as _annotations
 
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import Any, AsyncIterator
 
@@ -125,10 +124,8 @@ class Worker(ABC):
         }
 
         try:
-            # Preserve trace context when available; newer schedulers only pass trace ids.
-            parent_span = task_operation.get("_current_span")
-            span_ctx = use_span(parent_span) if parent_span is not None else nullcontext()
-            with span_ctx:
+            # Preserve trace context from scheduler
+            with use_span(task_operation["_current_span"]):
                 with tracer.start_as_current_span(
                     f"{task_operation['operation']} task",
                     attributes={"logfire.tags": ["bindu"]},
