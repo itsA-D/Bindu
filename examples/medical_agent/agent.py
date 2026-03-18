@@ -34,9 +34,10 @@ agent_config = {
     "description": "A medical guidance agent built with Agno and Bindu",
     "version": "1.0.0",
     "deployment": {
-        "url": "http://localhost:3773",
-        "expose": True
-    }
+            "url": "http://localhost:3773",
+            "expose": True,
+            "cors_origins": ["http://localhost:5173"]
+        },
 }
 
 # Bindufy and Launch
