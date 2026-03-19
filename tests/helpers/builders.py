@@ -4,7 +4,7 @@ These builders make it easy to create test data with sensible defaults
 while allowing customization of specific fields.
 """
 
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 
@@ -16,7 +16,7 @@ class TaskBuilder:
     """
     
     def __init__(self):
-        self._data = {
+        self._data: dict[str, Any] = {
             "id": str(uuid4()),
             "context_id": str(uuid4()),
             "state": "submitted",
@@ -62,7 +62,7 @@ class MessageBuilder:
     """
     
     def __init__(self):
-        self._data = {
+        self._data: dict[str, Any] = {
             "id": str(uuid4()),
             "context_id": str(uuid4()),
             "role": "user",
@@ -107,7 +107,7 @@ class ContextBuilder:
     """
     
     def __init__(self):
-        self._data = {
+        self._data: dict[str, Any] = {
             "id": str(uuid4()),
             "metadata": {},
         }
@@ -135,7 +135,7 @@ class ArtifactBuilder:
     """
     
     def __init__(self):
-        self._data = {
+        self._data: dict[str, Any] = {
             "id": str(uuid4()),
             "parts": [],
         }
