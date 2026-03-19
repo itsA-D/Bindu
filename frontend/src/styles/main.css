@@ -9,11 +9,18 @@ body {
 	font-family: 'JetBrains Mono', monospace;
 	overscroll-behavior: none;
 	touch-action: pan-x pan-y;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-rendering: optimizeLegibility;
+}
+
+html {
+	scroll-behavior: smooth;
 }
 
 @layer components {
 	.btn {
-		@apply inline-flex flex-shrink-0 cursor-pointer select-none items-center justify-center whitespace-nowrap outline-none transition-all focus:ring disabled:cursor-default;
+		@apply inline-flex flex-shrink-0 cursor-pointer select-none items-center justify-center whitespace-nowrap outline-none transition-all duration-150 focus:ring disabled:cursor-default;
 	}
 
 	.active-model {

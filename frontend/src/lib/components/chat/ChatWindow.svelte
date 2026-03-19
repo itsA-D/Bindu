@@ -421,9 +421,8 @@
 	<div
 		class="pointer-events-none absolute inset-x-0 bottom-0 z-0 mx-auto flex w-full
 			max-w-3xl flex-col items-center justify-center bg-gradient-to-t from-white
-			via-white/100 to-white/0 px-3.5 pt-2 dark:border-gray-800
-			dark:from-gray-900 dark:via-gray-900/100
-			dark:to-gray-900/0 max-sm:py-0 sm:px-5 md:pb-4 xl:max-w-4xl [&>*]:pointer-events-auto"
+			via-white/95 to-white/0 px-3.5 pt-2 dark:from-gray-900
+			dark:via-gray-900/95 dark:to-transparent pb-10 sm:px-5 md:pb-14 xl:max-w-4xl [&>*]:pointer-events-auto"
 	>
 				{#if sources?.length && !loading}
 			<div

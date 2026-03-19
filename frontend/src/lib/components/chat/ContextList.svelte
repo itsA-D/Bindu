@@ -47,22 +47,22 @@
 		{#each sortedContexts as ctx, index (ctx.id)}
 			<button
 				type="button"
-				class="group relative flex flex-col gap-1 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 {ctx.id === activeContextId ? 'bg-gray-100 dark:bg-gray-700' : ''}"
+				class="group relative flex flex-col gap-1 rounded-lg px-2.5 py-2 text-left text-sm transition-colors duration-150 hover:bg-gray-100 dark:hover:bg-gray-700/60 {ctx.id === activeContextId ? 'bg-gray-100/80 ring-1 ring-inset ring-gray-200 dark:bg-gray-700/80 dark:ring-gray-600/50' : ''}"
 				on:click={() => handleSwitchContext(ctx.id)}
 			>
 				<div class="flex items-center gap-2">
-					<span class="truncate font-medium text-gray-900 dark:text-gray-100">
+					<span class="truncate text-xs font-medium text-gray-800 dark:text-gray-100">
 						{ctx.firstMessage || 'New conversation'}
 					</span>
 					<div
 						role="button"
 						tabindex="0"
-						class="ml-auto hidden size-5 items-center justify-center rounded hover:bg-gray-200 group-hover:flex dark:hover:bg-gray-600 cursor-pointer"
+						class="ml-auto hidden size-5 cursor-pointer items-center justify-center rounded transition-colors duration-100 hover:bg-gray-200 group-hover:flex dark:hover:bg-gray-600"
 						on:click={(e) => handleClearContext(e, ctx.id)}
 						on:keydown={(e) => e.key === 'Enter' && handleClearContext(e, ctx.id)}
 						title="Clear context"
 					>
-						<span class="text-xs text-gray-500 dark:text-gray-400">×</span>
+						<span class="text-sm leading-none text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-100">×</span>
 					</div>
 				</div>
 				<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">

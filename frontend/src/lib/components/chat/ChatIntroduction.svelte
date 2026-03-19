@@ -19,11 +19,12 @@
 </script>
 
 <div class="my-auto grid items-center justify-center gap-8 text-center">
-	<div class="-translate-y-16 select-none md:-translate-y-12">
-		<div class="rounded-xl text-3xl font-semibold md:text-5xl">
+	<div class="intro-hero -translate-y-16 select-none md:-translate-y-12">
+		<div class="intro-glow" aria-hidden="true"></div>
+		<h1 class="intro-title rounded-xl text-4xl font-bold tracking-tight md:text-6xl">
 			{publicConfig.PUBLIC_APP_NAME}
-		</div>
-		<p class="mt-2 text-sm font-medium tracking-widest text-gray-400 dark:text-gray-500">
+		</h1>
+		<p class="intro-tagline mt-3 text-xs font-semibold tracking-[0.25em] text-gray-400 dark:text-gray-500">
 			IMAGINE · BUILD · CONNECT
 		</p>
 	</div>
@@ -85,3 +86,69 @@
 	</div>
 	<div class="h-40 sm:h-24"></div> -->
 </div>
+
+<style>
+	.intro-hero {
+		position: relative;
+		animation: intro-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+	}
+
+	@keyframes intro-fade-up {
+		from {
+			opacity: 0;
+			transform: translateY(calc(-4rem + 12px));
+		}
+		to {
+			opacity: 1;
+			transform: translateY(-4rem);
+		}
+	}
+
+	@media (min-width: 768px) {
+		@keyframes intro-fade-up {
+			from {
+				opacity: 0;
+				transform: translateY(calc(-3rem + 12px));
+			}
+			to {
+				opacity: 1;
+				transform: translateY(-3rem);
+			}
+		}
+	}
+
+	.intro-glow {
+		position: absolute;
+		inset: 0;
+		margin: auto;
+		width: 280px;
+		height: 120px;
+		border-radius: 9999px;
+		background: radial-gradient(ellipse at center, rgba(168, 85, 247, 0.12) 0%, transparent 70%);
+		filter: blur(20px);
+		pointer-events: none;
+	}
+
+	:global(.dark) .intro-glow {
+		background: radial-gradient(ellipse at center, rgba(139, 92, 246, 0.18) 0%, transparent 70%);
+	}
+
+	.intro-title {
+		background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+	}
+
+	:global(.dark) .intro-title {
+		background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 40%, #a78bfa 100%);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+	}
+
+	.intro-tagline {
+		position: relative;
+		z-index: 1;
+	}
+</style>
