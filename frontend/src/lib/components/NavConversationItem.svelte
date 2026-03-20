@@ -27,8 +27,8 @@
 	data-sveltekit-noscroll
 	data-sveltekit-preload-data="tap"
 	href="{base}/conversation/{conv.id}"
-	class="group flex h-[2.15rem] flex-none items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-gray-600 transition-colors duration-150 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-300 dark:hover:bg-gray-700/60 dark:hover:text-gray-100 max-sm:h-10
-		{conv.id === page.params.id ? 'bg-gray-100/80 font-medium text-gray-900 dark:bg-gray-700/80 dark:text-white ring-1 ring-inset ring-gray-200 dark:ring-gray-600/50' : ''}"
+	class="group flex h-[2.15rem] flex-none items-center gap-1.5 rounded-lg pl-2.5 pr-2 text-slate-700 transition-colors duration-150 hover:bg-white/80 hover:text-slate-950 dark:text-gray-300 dark:hover:bg-gray-700/60 dark:hover:text-gray-100 max-sm:h-10
+		{conv.id === page.params.id ? 'bg-white font-semibold text-slate-950 dark:bg-gray-700/80 dark:text-white ring-1 ring-inset ring-slate-300 dark:ring-gray-600/50' : ''}"
 >
 	<div class="my-2 min-w-0 flex-1 truncate first-letter:uppercase">
 		<span>{conv.title}</span>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Model } from "$lib/types/Model";
 	import { usePublicConfig } from "$lib/utils/PublicConfig.svelte";
+	import Logo from "$lib/components/icons/Logo.svelte";
 
 	const publicConfig = usePublicConfig();
 
@@ -19,14 +20,19 @@
 </script>
 
 <div class="my-auto grid items-center justify-center gap-8 text-center">
-	<div class="intro-hero -translate-y-16 select-none md:-translate-y-12">
+	<div class="intro-hero -translate-y-12 select-none md:-translate-y-10">
 		<div class="intro-glow" aria-hidden="true"></div>
-		<h1 class="intro-title rounded-xl text-4xl font-bold tracking-tight md:text-6xl">
-			{publicConfig.PUBLIC_APP_NAME}
-		</h1>
-		<p class="intro-tagline mt-3 text-xs font-semibold tracking-[0.25em] text-gray-400 dark:text-gray-500">
-			IMAGINE · BUILD · CONNECT
-		</p>
+		<div class="intro-mark-row flex-col gap-2">
+			<h1 class="intro-title rounded-xl text-4xl font-semibold tracking-tight md:text-6xl">
+				Chat with Bindu
+			</h1>
+			<p class="mt-4 text-[11px] font-semibold uppercase tracking-[0.4em] text-slate-800/60 dark:text-slate-400/40">
+				IMAGINE • BUILD • CONNECT
+			</p>
+
+		</div>
+
+
 	</div>
 	<!-- <div class="lg:col-span-1">
 		<div>
@@ -121,34 +127,44 @@
 		position: absolute;
 		inset: 0;
 		margin: auto;
-		width: 280px;
-		height: 120px;
+		width: 360px;
+		height: 160px;
 		border-radius: 9999px;
-		background: radial-gradient(ellipse at center, rgba(168, 85, 247, 0.12) 0%, transparent 70%);
-		filter: blur(20px);
+		background: radial-gradient(ellipse at center, rgba(85, 124, 247, 0.17) 0%, transparent 70%);
+		filter: blur(26px);
 		pointer-events: none;
 	}
 
+	.intro-mark-row {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 1rem;
+	}
+
+	.intro-mark {
+		width: 3.1rem;
+		height: 3.1rem;
+		filter: grayscale(1) brightness(1.95);
+		opacity: 0.95;
+	}
+
 	:global(.dark) .intro-glow {
-		background: radial-gradient(ellipse at center, rgba(139, 92, 246, 0.18) 0%, transparent 70%);
+		background: radial-gradient(ellipse at center, rgba(98, 139, 255, 0.24) 0%, transparent 70%);
 	}
 
 	.intro-title {
-		background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+		background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
 	}
 
 	:global(.dark) .intro-title {
-		background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 40%, #a78bfa 100%);
+		background: linear-gradient(180deg, #d9e2f3 0%, #a5afc4 100%);
 		-webkit-background-clip: text;
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
 	}
 
-	.intro-tagline {
-		position: relative;
-		z-index: 1;
-	}
 </style>

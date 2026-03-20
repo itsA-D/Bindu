@@ -14,8 +14,8 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
-html {
-	scroll-behavior: smooth;
+:root {
+	--sidebar-width: 280px;
 }
 
 @layer components {

@@ -206,7 +206,8 @@
 		rows="1"
 		tabindex="0"
 		inputmode="text"
-		class="scrollbar-custom max-h-[4lh] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent px-2.5 py-2.5 outline-none focus:ring-0 focus-visible:ring-0 sm:px-3 md:max-h-[8lh]"
+		class="scrollbar-custom max-h-[4lh] w-full resize-none overflow-y-auto overflow-x-hidden border-0 bg-transparent px-2.5 py-2.5 text-slate-900 outline-none placeholder:text-slate-400/70 focus:ring-0 focus-visible:ring-0 dark:text-slate-100 dark:placeholder:text-slate-500 sm:px-3 md:max-h-[8lh]"
+
 		class:text-gray-400={disabled}
 		bind:value
 		bind:this={textareaElement}
@@ -220,109 +221,24 @@
 		onbeforeinput={requireAuthUser}
 	></textarea>
 
-	{#if !showNoTools}
-		<div
-			class={[
-				"scrollbar-custom -ml-0.5 flex max-w-[calc(100%-40px)] flex-wrap items-center justify-start gap-2.5 px-3 pb-2.5 pt-1.5 text-gray-500 dark:text-gray-400 max-md:flex-nowrap max-md:overflow-x-auto sm:gap-2",
-			]}
-		>
-			{#if showFileUpload}
-				<div class="flex items-center">
-					<input
-						bind:this={fileInputEl}
-						disabled={loading}
-						class="absolute hidden size-0"
-						aria-label="Upload file"
-						type="file"
-						multiple
-						onchange={onFileChange}
-						onclick={(e) => {
-							if (requireAuthUser()) {
-								e.preventDefault();
-							}
-						}}
-						accept={mimeTypes.join(",")}
-					/>
-
-					<DropdownMenu.Root
-						bind:open={isDropdownOpen}
-						onOpenChange={(open) => {
-							if (open && requireAuthUser()) {
-								isDropdownOpen = false;
-								return;
-							}
-							isDropdownOpen = open;
-						}}
-					>
-						<DropdownMenu.Trigger
-							class="btn size-8 rounded-full border bg-white text-black shadow transition-none enabled:hover:bg-white enabled:hover:shadow-inner dark:border-transparent dark:bg-gray-600/50 dark:text-white dark:hover:enabled:bg-gray-600 sm:size-7"
-							disabled={loading}
-							aria-label="Add attachment"
-						>
-							<IconPlus class="text-base sm:text-sm" />
-						</DropdownMenu.Trigger>
-						<DropdownMenu.Portal>
-							<DropdownMenu.Content
-								class="z-50 rounded-xl border border-gray-200 bg-white/95 p-1 text-gray-800 shadow-lg backdrop-blur dark:border-gray-700/60 dark:bg-gray-800/95 dark:text-gray-100"
-								side="top"
-								sideOffset={8}
-								align="start"
-								trapFocus={false}
-								onCloseAutoFocus={(e) => e.preventDefault()}
-								interactOutsideBehavior="defer-otherwise-close"
-							>
-								{#if modelIsMultimodal}
-									<DropdownMenu.Item
-										class="flex h-9 select-none items-center gap-1 rounded-md px-2 text-sm text-gray-700 data-[highlighted]:bg-gray-100 focus-visible:outline-none dark:text-gray-200 dark:data-[highlighted]:bg-white/10 sm:h-8"
-										onSelect={() => openFilePickerImage()}
-									>
-										<CarbonImage class="size-4 opacity-90 dark:opacity-80" />
-										Add image(s)
-									</DropdownMenu.Item>
-								{/if}
-
-								<DropdownMenu.Sub>
-									<DropdownMenu.SubTrigger
-										class="flex h-9 select-none items-center gap-1 rounded-md px-2 text-sm text-gray-700 data-[highlighted]:bg-gray-100 data-[state=open]:bg-gray-100 focus-visible:outline-none dark:text-gray-200 dark:data-[highlighted]:bg-white/10 dark:data-[state=open]:bg-white/10 sm:h-8"
-									>
-										<div class="flex items-center gap-1">
-											<CarbonDocument class="size-4 opacity-90 dark:opacity-80" />
-											Add text file
-										</div>
-										<div class="ml-auto flex items-center">
-											<CarbonChevronRight class="size-4 opacity-70 dark:opacity-80" />
-										</div>
-									</DropdownMenu.SubTrigger>
-									<DropdownMenu.SubContent
-										class="z-50 rounded-xl border border-gray-200 bg-white/95 p-1 text-gray-800 shadow-lg backdrop-blur dark:border-gray-700/60 dark:bg-gray-800/95 dark:text-gray-100"
-										sideOffset={10}
-										trapFocus={false}
-										onCloseAutoFocus={(e) => e.preventDefault()}
-										interactOutsideBehavior="defer-otherwise-close"
-									>
-										<DropdownMenu.Item
-											class="flex h-9 select-none items-center gap-1 rounded-md px-2 text-sm text-gray-700 data-[highlighted]:bg-gray-100 focus-visible:outline-none dark:text-gray-200 dark:data-[highlighted]:bg-white/10 sm:h-8"
-											onSelect={() => openFilePickerText()}
-										>
-											<CarbonUpload class="size-4 opacity-90 dark:opacity-80" />
-											Upload from device
-										</DropdownMenu.Item>
-										<DropdownMenu.Item
-											class="flex h-9 select-none items-center gap-1 rounded-md px-2 text-sm text-gray-700 data-[highlighted]:bg-gray-100 focus-visible:outline-none dark:text-gray-200 dark:data-[highlighted]:bg-white/10 sm:h-8"
-											onSelect={() => (isUrlModalOpen = true)}
-										>
-											<CarbonLink class="size-4 opacity-90 dark:opacity-80" />
-											Fetch from URL
-										</DropdownMenu.Item>
-									</DropdownMenu.SubContent>
-								</DropdownMenu.Sub>
-							</DropdownMenu.Content>
-						</DropdownMenu.Portal>
-					</DropdownMenu.Root>
-				</div>
-			{/if}
-		</div>
-	{/if}
+	<div class="hidden">
+		<input
+			bind:this={fileInputEl}
+			disabled={loading}
+			class="absolute hidden size-0"
+			aria-label="Upload file"
+			type="file"
+			multiple
+			onchange={onFileChange}
+			onclick={(e) => {
+				if (requireAuthUser()) {
+					e.preventDefault();
+				}
+			}}
+			accept={mimeTypes.join(",")}
+		/>
+	</div>
+	
 	{@render children?.()}
 
 	<UrlFetchModal
@@ -331,6 +247,7 @@
 		onfiles={handleFetchedFiles}
 	/>
 </div>
+
 
 <style lang="postcss">
 	:global(pre),

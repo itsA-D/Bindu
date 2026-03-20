@@ -1,10 +1,11 @@
 <script lang="ts">
-	// Footer component matching Bindu agent UI style
+	let { isCollapsed }: { isCollapsed: boolean } = $props();
 </script>
 
 <footer
-	class="fixed bottom-0 left-0 right-0 z-10 flex items-center justify-between border-t border-gray-100 bg-white/95 px-4 py-1.5 text-[10px] backdrop-blur-md dark:border-gray-800 dark:bg-gray-900/95 sm:px-5 sm:text-[11px]"
+	class="fixed bottom-0 left-0 right-0 z-10 flex flex-wrap items-center justify-between border-t border-gray-100 bg-white/95 px-4 py-1.5 text-[10px] backdrop-blur-md transition-all duration-300 dark:border-gray-800 dark:bg-gray-900/95 sm:px-5 sm:text-[11px] {isCollapsed ? 'md:left-0' : 'md:left-[280px]'}"
 >
+
 	<div class="flex items-center gap-2.5">
 		<div class="flex items-center gap-1.5 grayscale-[0.5] contrast-[1.1]">
 			<span class="relative flex size-1.5">
@@ -13,12 +14,12 @@
 			</span>
 			<span class="font-semibold text-gray-700 dark:text-gray-200">Powered by Bindu</span>
 		</div>
-		<span class="hidden text-gray-200 dark:text-gray-700 lg:inline">|</span>
-		<span class="hidden text-gray-400 dark:text-gray-500 lg:inline"
+		<span class="hidden text-gray-200 dark:text-gray-700 xl:inline">|</span>
+		<span class="hidden truncate text-gray-400 dark:text-gray-500 xl:inline"
 			>We provide heart to your AI, so that it can talk, negotiate, and trade securely</span
 		>
 	</div>
-	<div class="flex items-center gap-4">
+	<div class="ml-auto flex items-center gap-4 whitespace-nowrap">
 		<a
 			href="https://getbindu.com"
 			target="_blank"
@@ -38,10 +39,10 @@
 		<a
 			href="https://news.getbindu.com"
 			target="_blank"
-			class="hidden text-gray-400 transition-colors duration-150 hover:text-gray-800 dark:text-gray-500 dark:hover:text-gray-200 sm:inline"
+			class="hidden text-gray-400 transition-colors duration-150 hover:text-gray-800 dark:text-gray-500 dark:hover:text-gray-200 lg:inline"
 			>Newsletter</a
 		>
-		<span class="hidden text-gray-400 dark:text-gray-500 md:inline">
+		<span class="hidden text-gray-400 dark:text-gray-500 xl:inline">
 			Built by <a
 				href="https://getbindu.com"
 				target="_blank"
@@ -51,3 +52,4 @@
 		</span>
 	</div>
 </footer>
+
