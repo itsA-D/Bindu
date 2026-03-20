@@ -596,13 +596,6 @@
 								>
 									<svg viewBox="0 0 16 16" fill="currentColor" class="size-4"><path d="M8 1a.75.75 0 0 1 .75.75v5.5h5.5a.75.75 0 0 1 0 1.5h-5.5v5.5a.75.75 0 0 1-1.5 0v-5.5H1.75a.75.75 0 0 1 0-1.5h5.5V1.75A.75.75 0 0 1 8 1Z" /></svg>
 								</button>
-								
-								<div class="flex items-center gap-1.5 rounded-full border border-blue-200/50 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400">
-									<span class="size-1.5 rounded-full bg-blue-500"></span>
-									MCP
-									<span class="flex size-3.5 items-center justify-center rounded-full bg-blue-100/50 text-[9px] dark:bg-blue-500/20">2</span>
-									<button class="ml-0.5 opacity-50 hover:opacity-100">×</button>
-								</div>
 							</div>
 
 							<div class="flex items-center gap-2">
