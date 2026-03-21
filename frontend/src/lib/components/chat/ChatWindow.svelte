@@ -582,22 +582,7 @@
 							/>
 						{/if}
 
-						<div class="flex items-center justify-between px-2 pb-1.5 pt-1">
-							<div class="flex items-center gap-2">
-								<button
-									type="button"
-									class="flex size-7 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition-all hover:bg-gray-200 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10"
-									onclick={() => {
-										// Trigger file input
-										const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-										input?.click();
-									}}
-									aria-label="Add attachment"
-								>
-									<svg viewBox="0 0 16 16" fill="currentColor" class="size-4"><path d="M8 1a.75.75 0 0 1 .75.75v5.5h5.5a.75.75 0 0 1 0 1.5h-5.5v5.5a.75.75 0 0 1-1.5 0v-5.5H1.75a.75.75 0 0 1 0-1.5h5.5V1.75A.75.75 0 0 1 8 1Z" /></svg>
-								</button>
-							</div>
-
+						<div class="flex items-center justify-end px-2 pb-1.5 pt-1">
 							<div class="flex items-center gap-2">
 								{#if loading}
 									<StopGeneratingBtn
