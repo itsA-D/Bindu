@@ -63,6 +63,12 @@ For full URL override, use `BINDU_DEPLOYMENT_URL` (e.g. `http://127.0.0.1:5001`)
 - `ai-data-analysis-agent/` - Autonomous data analyst with CSV profiling and visualization
 - `cybersecurity-newsletter/` - Security news aggregator with CVE tracking
 
+### TypeScript (Language-Agnostic via gRPC)
+- `typescript-openai-agent/` - OpenAI SDK agent bindufied with TypeScript SDK
+- `typescript-langchain-agent/` - LangChain.js agent bindufied with TypeScript SDK
+
+> TypeScript agents use `@bindu/sdk` which automatically launches the Bindu Python core in the background. Same A2A protocol, same DID, same everything — just a different language. See the [gRPC documentation](../docs/GRPC_LANGUAGE_AGNOSTIC.md) for details.
+
 ### Advanced
 - `agent_swarm/` - Multi-agent collaboration system
 - `cerina_bindu/cbt/` - CBT therapy protocol generator
@@ -133,6 +139,8 @@ if __name__ == "__main__":
 ## Documentation
 
 - [Bindu Docs](https://docs.getbindu.com)
+- [gRPC Language-Agnostic Guide](../docs/GRPC_LANGUAGE_AGNOSTIC.md)
+- [TypeScript SDK](../sdks/typescript/README.md)
 - [Payment Guide](../docs/PAYMENT.md)
 - [DID Guide](../docs/DID.md)
 - [Skills Guide](../docs/SKILLS.md)
