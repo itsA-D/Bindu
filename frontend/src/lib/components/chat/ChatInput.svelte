@@ -222,13 +222,9 @@
 	></textarea>
 
 	{#if !showNoTools}
-		<div
-			class={[
-				"scrollbar-custom -ml-0.5 flex max-w-[calc(100%-40px)] flex-wrap items-center justify-start gap-2.5 px-3 pb-2.5 pt-1.5 text-gray-500 dark:text-gray-400 max-md:flex-nowrap max-md:overflow-x-auto sm:gap-2",
-			]}
-		>
+		<div class="relative">
 			{#if showFileUpload}
-				<div class="flex items-center">
+				<div class="absolute bottom-0.9 left-2.5">
 					<input
 						bind:this={fileInputEl}
 						disabled={loading}
