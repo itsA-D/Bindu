@@ -647,6 +647,15 @@ pre-commit run --all-files
         <sub><b>প্যারাস চামোলি</b></sub>
       </a>
       <br />
+    </td>
+    <td align="center">
+      <a href="https://github.com/chandan-1427">
+        <img src="https://avatars.githubusercontent.com/u/202320492?v=4" width="100px;" alt="Chandan"/>
+        <br />
+        <sub><b>চন্দন</b></sub>
+      </a>
+      <br />
+    </td>
     </tr>
 </table>
 

@@ -648,6 +648,15 @@ Nuestros moderadores dedicados ayudan a mantener una comunidad acogedora y produ
         <sub><b>Paras Chamoli</b></sub>
       </a>
       <br />
+    </td>
+    <td align="center">
+      <a href="https://github.com/chandan-1427">
+        <img src="https://avatars.githubusercontent.com/u/202320492?v=4" width="100px;" alt="Chandan"/>
+        <br />
+        <sub><b>Chandan</b></sub>
+      </a>
+      <br />
+    </td>
     </tr>
 </table>
 

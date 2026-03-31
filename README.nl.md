@@ -649,7 +649,16 @@ Onze toegewijde moderators helpen een gastvrije en productieve gemeenschap te be
         <sub><b>Paras Chamoli</b></sub>
       </a>
       <br />
-    </tr>
+    </td>
+    <td align="center">
+      <a href="https://github.com/chandan-1427">
+        <img src="https://avatars.githubusercontent.com/u/202320492?v=4" width="100px;" alt="Chandan"/>
+        <br />
+        <sub><b>Chandan</b></sub>
+      </a>
+      <br />
+    </td>
+  </tr>
 </table>
 
 > Wil je moderator worden? Neem contact op via [Discord](https://discord.gg/3w5zuYUuwt)!
