@@ -48,7 +48,7 @@ def build_agent() -> Agent:
     """Build and return the multilingual agent instance."""
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
     mem0_api_key = os.getenv("MEM0_API_KEY")
-    model_name = os.getenv("MODEL_NAME", "openai/gpt-4o-mini")
+    model_name = os.getenv("MODEL_NAME", "openai/gpt-oss-120b")
 
     if not openrouter_api_key:
         raise ValueError("OPENROUTER_API_KEY environment variable is required.")
