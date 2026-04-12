@@ -53,7 +53,7 @@ def _resolve_and_check_ip(hostname: str) -> str:
         ValueError: If the hostname cannot be resolved or resolves to a blocked range.
     """
     try:
-        resolved_ip = socket.getaddrinfo(hostname, None)[0][4][0]
+        resolved_ip = str(socket.getaddrinfo(hostname, None)[0][4][0])
         addr = ipaddress.ip_address(resolved_ip)
     except (socket.gaierror, ValueError) as exc:
         raise ValueError(
@@ -228,7 +228,7 @@ class NotificationService:
                 conn = http.client.HTTPSConnection(
                     resolved_ip, port, timeout=self.timeout, context=ctx
                 )
-                conn.sock = tls_sock  # type: ignore[attr-defined]
+                conn.sock = tls_sock
             else:
                 conn = http.client.HTTPConnection(
                     resolved_ip, port, timeout=self.timeout
@@ -249,9 +249,7 @@ class NotificationService:
             except OSError:
                 body = b""
             message = body.decode("utf-8", errors="ignore").strip()
-            raise NotificationDeliveryError(
-                status, message or f"HTTP error {status}"
-            )
+            raise NotificationDeliveryError(status, message or f"HTTP error {status}")
         except NotificationDeliveryError:
             raise
         except (OSError, http.client.HTTPException) as exc:
