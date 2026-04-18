@@ -1,8 +1,8 @@
 # Known Issues
 
 Last updated: 2026-04-18 (Bindu Core review pass added;
-did-signature-fails-open-on-missing-headers removed — see
-[`2026-04-18-did-signature-fail-open.md`](./2026-04-18-did-signature-fail-open.md))
+idor-task-context-no-ownership-check removed — see postmortem
+[`2026-04-18-idor-task-ownership.md`](./2026-04-18-idor-task-ownership.md))
 
 Things the project can't currently do, or that behave in surprising ways.
 Each entry has a workaround where one exists. If you hit one of these and
@@ -578,29 +578,26 @@ test for it in the same PR.
 
 ### High
 
-### idor-task-context-no-ownership-check
+### did-signature-fails-open-on-missing-headers
 
-**Severity:** high (security, multi-tenancy)
-**Summary:** None of the task or context handlers verify that the
-caller owns the resource they are asking for. `get_task`,
-`cancel_task`, `list_tasks`, and `task_feedback` in
-[`bindu/server/handlers/task_handlers.py`](../bindu/server/handlers/task_handlers.py)
-accept any `task_id` UUID and return the record. `list_contexts` and
-`clear_context` in
-[`bindu/server/handlers/context_handlers.py`](../bindu/server/handlers/context_handlers.py)
-are the same shape. The Hydra middleware authenticates *who* the
-caller is but nothing downstream checks *what* that caller is allowed
-to see. Any authenticated client with a valid token can enumerate or
-guess UUIDs and read, cancel, or delete another tenant's tasks,
-messages, artifacts, and contexts. `list_tasks` has no `created_by`
-filter at all.
-**Workaround:** None at the application layer. Deploy one Bindu
-instance per trust boundary (single-tenant) until ownership is
-tracked. For multi-tenant deployments, front the service with an
-API gateway that enforces per-tenant access on top of task/context
-IDs. A proper fix requires recording `caller_did` at task and context
-creation time and adding an ownership check plus owner-filtered
-listing to every handler.
+**Severity:** high (security, authentication bypass)
+**Summary:** `_verify_did_signature_asgi` in
+[`bindu/server/middleware/auth/hydra.py`](../bindu/server/middleware/auth/hydra.py)
+lines 164–169 returns `is_valid=True` (with
+`{"did_verified": False, "reason": "no_signature_headers"}`) when a
+DID-style OAuth client makes a request without `X-DID-Signature`
+headers. The caller at line 274 only rejects when `is_valid=False`,
+so DID-based signing is effectively optional — any holder of a valid
+bearer token whose `client_id` starts with `did:` can skip the
+signature layer by simply omitting the headers. The same fail-open
+exists on lines 174–176 when the Hydra client metadata returns no
+public key.
+**Workaround:** If DID signing must be enforced in production, front
+the service with a reverse proxy that rejects requests missing
+`X-DID-Signature` when the caller identity requires it, or run a
+custom middleware in front of the Hydra middleware that makes the
+signature mandatory. The correct fix is to change both branches to
+return `False` so the request is rejected.
 **Tracking:** _(no issue yet)_
 
 ### x402-middleware-fails-open-on-body-parse
