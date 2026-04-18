@@ -1,8 +1,8 @@
 # Known Issues
 
 Last updated: 2026-04-18 (Bindu Core review pass added;
-types-populate-by-name-missing removed — see
-[`2026-04-18-types-populate-by-name.md`](./2026-04-18-types-populate-by-name.md))
+idor-task-context-no-ownership-check removed — see postmortem
+[`2026-04-18-idor-task-ownership.md`](./2026-04-18-idor-task-ownership.md))
 
 Things the project can't currently do, or that behave in surprising ways.
 Each entry has a workaround where one exists. If you hit one of these and
@@ -578,31 +578,6 @@ test for it in the same PR.
 
 ### High
 
-### idor-task-context-no-ownership-check
-
-**Severity:** high (security, multi-tenancy)
-**Summary:** None of the task or context handlers verify that the
-caller owns the resource they are asking for. `get_task`,
-`cancel_task`, `list_tasks`, and `task_feedback` in
-[`bindu/server/handlers/task_handlers.py`](../bindu/server/handlers/task_handlers.py)
-accept any `task_id` UUID and return the record. `list_contexts` and
-`clear_context` in
-[`bindu/server/handlers/context_handlers.py`](../bindu/server/handlers/context_handlers.py)
-are the same shape. The Hydra middleware authenticates *who* the
-caller is but nothing downstream checks *what* that caller is allowed
-to see. Any authenticated client with a valid token can enumerate or
-guess UUIDs and read, cancel, or delete another tenant's tasks,
-messages, artifacts, and contexts. `list_tasks` has no `created_by`
-filter at all.
-**Workaround:** None at the application layer. Deploy one Bindu
-instance per trust boundary (single-tenant) until ownership is
-tracked. For multi-tenant deployments, front the service with an
-API gateway that enforces per-tenant access on top of task/context
-IDs. A proper fix requires recording `caller_did` at task and context
-creation time and adding an ownership check plus owner-filtered
-listing to every handler.
-**Tracking:** _(no issue yet)_
-
 ### did-signature-fails-open-on-missing-headers
 
 **Severity:** high (security, authentication bypass)
@@ -810,6 +785,28 @@ at the `TaskManager.send_message` level plus an explicit body-size
 limit on the Starlette app.
 **Tracking:** _(no issue yet)_ (shape-equivalent to the gateway's
 `no-rate-limit-cors-body-size-limit` entry)
+
+### types-populate-by-name-missing
+
+**Severity:** medium (developer experience, cross-SDK compat)
+**Summary:** All types in
+[`bindu/common/protocol/types.py`](../bindu/common/protocol/types.py)
+are decorated with
+`@pydantic.with_config(ConfigDict(alias_generator=to_camel))` and the
+server dumps responses with `by_alias=True`. The wire format is
+therefore correctly camelCase (A2A 0.3.0 compliant). But
+`populate_by_name=True` is *not* set, so on input the Python
+validator only accepts the camelCase alias (`contextId`,
+`messageId`, `taskId`). A Python-native client that hand-builds the
+request with snake_case keys (`context_id`, `message_id`, `task_id`)
+fails validation or silently drops fields. This confuses developers
+because the Python code itself uses snake_case attribute names; the
+asymmetry is invisible until something breaks at the wire.
+**Workaround:** Always send camelCase on the wire, even from Python
+clients. The one-line fix is to add `populate_by_name=True` to the
+`ConfigDict` on every typed dict, which makes the server accept
+either form on input while keeping camelCase on output.
+**Tracking:** _(no issue yet)_
 
 ### context-id-silent-fallback
 
