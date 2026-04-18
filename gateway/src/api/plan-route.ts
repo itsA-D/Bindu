@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto"
 import { Effect, Stream } from "effect"
 import type { Context as HonoContext } from "hono"
 import { streamSSE } from "hono/streaming"
@@ -52,7 +53,7 @@ async function handleRequest(
   if (authConfig.mode === "bearer") {
     const header = c.req.header("Authorization")
     const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined
-    if (!token || !authConfig.tokens.includes(token)) {
+    if (!token || !validateBearerToken(token, authConfig.tokens)) {
       return c.json({ error: "unauthorized" }, 401)
     }
   }
@@ -219,6 +220,38 @@ function spawnReader<T>(
   ).catch(() => {
     /* stream shut down */
   })
+}
+
+/**
+ * Constant-time bearer-token validator.
+ *
+ * `Array.prototype.includes` calls `===` which short-circuits on the
+ * first mismatching byte; the time difference is observable from the
+ * network and lets an attacker recover the token byte-by-byte via
+ * statistical sampling. Additionally, iterating the tokens list with a
+ * short-circuiting match would leak WHICH token in the list was a
+ * prefix of the guess.
+ *
+ * Defenses in order:
+ *   1. Hash both sides to SHA-256 so inputs are ALWAYS 32 bytes —
+ *      this removes the length leak and lets timingSafeEqual run
+ *      without throwing on unequal-length buffers.
+ *   2. Run timingSafeEqual against every configured token, even after
+ *      a match — total time becomes O(tokens.length) regardless of
+ *      which entry matched (or whether none did).
+ *   3. OR the results into a single boolean at the end.
+ */
+export function validateBearerToken(provided: string, validTokens: readonly string[]): boolean {
+  if (validTokens.length === 0) return false
+  const providedHash = createHash("sha256").update(provided, "utf8").digest()
+  let matched = false
+  for (const valid of validTokens) {
+    const validHash = createHash("sha256").update(valid, "utf8").digest()
+    // Do the compare for EVERY entry (no early return) so total time
+    // depends only on tokens.length, never on which token matched.
+    if (timingSafeEqual(providedHash, validHash)) matched = true
+  }
+  return matched
 }
 
 function parseAgentFromTool(toolId: string): string {
