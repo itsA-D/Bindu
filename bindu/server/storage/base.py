@@ -56,12 +56,22 @@ class Storage(ABC, Generic[ContextT]):
         """
 
     @abstractmethod
-    async def submit_task(self, context_id: UUID, message: Message) -> Task:
+    async def submit_task(
+        self,
+        context_id: UUID,
+        message: Message,
+        caller_did: str | None = None,
+    ) -> Task:
         """Create and store a new task.
 
         Args:
             context_id: Context to associate the task with
             message: Initial message containing task request
+            caller_did: Identity of the authenticated caller, recorded as the
+                task's owner (and, if this call also creates the context, the
+                context's owner). ``None`` is allowed for deployments with auth
+                disabled; such rows are only visible to other unauthenticated
+                callers once ownership enforcement lands in Phase 2.
 
         Returns:
             Newly created task in 'submitted' state
@@ -288,4 +298,42 @@ class Storage(ABC, Generic[ContextT]):
 
         Returns:
             Dictionary mapping task IDs to their webhook configurations
+        """
+
+    # -------------------------------------------------------------------------
+    # Ownership Lookup (for access-control enforcement)
+    # -------------------------------------------------------------------------
+
+    @abstractmethod
+    async def get_task_owner(self, task_id: UUID) -> str | None:
+        """Return the ``owner_did`` for a task.
+
+        Phase 2 handlers call this to compare the caller's identity against the
+        task owner before returning or mutating the row. Returns ``None`` when
+        the task does not exist OR when the task pre-dates ownership tracking
+        (rows written before the ``owner_did`` column existed). Callers MUST
+        treat "task exists but owner is None" as equivalent to "unowned" and
+        decide policy at the handler layer — do not infer existence from this
+        call.
+
+        Args:
+            task_id: Unique identifier of the task
+
+        Returns:
+            Owner DID string if recorded, None otherwise
+        """
+
+    @abstractmethod
+    async def get_context_owner(self, context_id: UUID) -> str | None:
+        """Return the ``owner_did`` for a context.
+
+        Semantics mirror :meth:`get_task_owner`. A context's owner is fixed on
+        first write (``submit_task`` that creates the context) and never
+        changes.
+
+        Args:
+            context_id: Unique identifier of the context
+
+        Returns:
+            Owner DID string if recorded, None otherwise
         """

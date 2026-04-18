@@ -332,7 +332,12 @@ class PostgresStorage(Storage[dict[str, Any]]):
 
         return await self._retry_on_connection_error(_load)
 
-    async def submit_task(self, context_id: UUID, message: Message) -> Task:
+    async def submit_task(
+        self,
+        context_id: UUID,
+        message: Message,
+        caller_did: str | None = None,
+    ) -> Task:
         """Create a new task or continue an existing non-terminal task.
 
         Task-First Pattern (Bindu):
@@ -343,6 +348,12 @@ class PostgresStorage(Storage[dict[str, Any]]):
         Args:
             context_id: Context to associate the task with
             message: Initial message containing task request
+            caller_did: Authenticated caller identity. Recorded as the task
+                owner on creation. When this call also creates the context,
+                the context's owner is recorded too. Context ownership is
+                write-once by virtue of the ``on_conflict_do_nothing`` insert
+                on ``contexts``; subsequent tasks on an existing context do
+                not overwrite its owner.
 
         Returns:
             Task in 'submitted' state (new or continued)
@@ -401,9 +412,12 @@ class PostgresStorage(Storage[dict[str, Any]]):
 
                         return self._row_to_task(updated_row)
 
-                    # Ensure context exists BEFORE creating task (foreign key constraint)
+                    # Ensure context exists BEFORE creating task (foreign key constraint).
+                    # owner_did set on insert; on_conflict_do_nothing preserves existing
+                    # context owner (write-once semantics).
                     stmt = insert(contexts_table).values(
                         id=context_id,
+                        owner_did=caller_did,
                         context_data={},
                         message_history=[],
                     )
@@ -416,6 +430,7 @@ class PostgresStorage(Storage[dict[str, Any]]):
                         .values(
                             id=task_id,
                             context_id=context_id,
+                            owner_did=caller_did,
                             kind="task",
                             state="submitted",
                             state_timestamp=now,
@@ -1033,3 +1048,43 @@ class PostgresStorage(Storage[dict[str, Any]]):
                 return {row.task_id: row.config for row in rows}
 
         return await self._retry_on_connection_error(_load_all)
+
+    # -------------------------------------------------------------------------
+    # Ownership Lookup
+    # -------------------------------------------------------------------------
+
+    async def get_task_owner(self, task_id: UUID) -> str | None:
+        """Return the owner DID for a task, or None if unknown or unowned."""
+        task_id = validate_uuid_type(task_id, "task_id")
+        self._ensure_connected()
+
+        async def _lookup():
+            async with self._get_session_with_schema() as session:
+                stmt = select(tasks_table.c.owner_did).where(
+                    tasks_table.c.id == task_id
+                )
+                result = await session.execute(stmt)
+                row = result.first()
+                if row is None:
+                    return None
+                return row.owner_did
+
+        return await self._retry_on_connection_error(_lookup)
+
+    async def get_context_owner(self, context_id: UUID) -> str | None:
+        """Return the owner DID for a context, or None if unknown or unowned."""
+        context_id = validate_uuid_type(context_id, "context_id")
+        self._ensure_connected()
+
+        async def _lookup():
+            async with self._get_session_with_schema() as session:
+                stmt = select(contexts_table.c.owner_did).where(
+                    contexts_table.c.id == context_id
+                )
+                result = await session.execute(stmt)
+                row = result.first()
+                if row is None:
+                    return None
+                return row.owner_did
+
+        return await self._retry_on_connection_error(_lookup)
