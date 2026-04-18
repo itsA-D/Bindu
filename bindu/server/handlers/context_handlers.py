@@ -39,8 +39,16 @@ class ContextHandlers:
     error_response_creator: Any = None
 
     @trace_context_operation("list_contexts")
-    async def list_contexts(self, request: ListContextsRequest) -> ListContextsResponse:
-        """List all contexts in storage."""
+    async def list_contexts(
+        self,
+        request: ListContextsRequest,
+        caller_did: str | None = None,
+    ) -> ListContextsResponse:
+        """List all contexts in storage.
+
+        ``caller_did`` is accepted but unused in Phase 1. Phase 2 will scope
+        the listing to contexts owned by the caller.
+        """
         # Support both 'length' and 'history_length' for backwards compatibility
         params = request.get("params", {})
         length = params.get("length") or params.get("history_length")
@@ -55,9 +63,15 @@ class ContextHandlers:
 
     @trace_context_operation("clear_context")
     async def clear_context(
-        self, request: ClearContextsRequest
+        self,
+        request: ClearContextsRequest,
+        caller_did: str | None = None,
     ) -> ClearContextsResponse:
-        """Clear a context from storage."""
+        """Clear a context from storage.
+
+        ``caller_did`` is accepted but unused in Phase 1. Phase 2 will refuse
+        the clear when the caller does not own the context.
+        """
         # Support both contextId (camelCase) and context_id (snake_case)
         params = request.get("params", {})
         context_id = params.get("contextId") or params.get("context_id")

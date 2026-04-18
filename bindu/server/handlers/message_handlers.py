@@ -113,13 +113,17 @@ class MessageHandlers:
         }
 
     async def _submit_and_schedule_task(
-        self, request_params: dict[str, Any]
+        self,
+        request_params: dict[str, Any],
+        caller_did: str | None = None,
     ) -> tuple[Task, UUID]:
         """Submit task to storage and schedule it with shared send/stream logic."""
         message = request_params["message"]
         context_id = self.context_id_parser(message.get("context_id"))
 
-        task: Task = await self.storage.submit_task(context_id, message)
+        task: Task = await self.storage.submit_task(
+            context_id, message, caller_did=caller_did
+        )
 
         scheduler_params: TaskSendParams = TaskSendParams(
             task_id=task["id"],
@@ -177,19 +181,32 @@ class MessageHandlers:
 
     @trace_task_operation("send_message")
     @track_active_task
-    async def send_message(self, request: SendMessageRequest) -> SendMessageResponse:
+    async def send_message(
+        self,
+        request: SendMessageRequest,
+        caller_did: str | None = None,
+    ) -> SendMessageResponse:
         """Send a message using the A2A protocol.
 
         Note: Payment enforcement is handled by X402Middleware before this method is called.
         If the request reaches here, payment has already been verified.
         Settlement will be handled by ManifestWorker when task completes.
+
+        ``caller_did`` is recorded as the task/context owner on creation. See
+        :meth:`Storage.submit_task` for the write-once context-owner semantics.
         """
-        task, _ = await self._submit_and_schedule_task(request["params"])
+        task, _ = await self._submit_and_schedule_task(
+            request["params"], caller_did=caller_did
+        )
         return SendMessageResponse(jsonrpc="2.0", id=request["id"], result=task)
 
     @trace_task_operation("stream_message")
     @track_active_task
-    async def stream_message(self, request: StreamMessageRequest):
+    async def stream_message(
+        self,
+        request: StreamMessageRequest,
+        caller_did: str | None = None,
+    ):
         """Stream messages using Server-Sent Events.
 
         Uses the same submit + scheduler execution path as message/send to keep
@@ -197,7 +214,9 @@ class MessageHandlers:
         """
         from starlette.responses import StreamingResponse
 
-        task, context_id = await self._submit_and_schedule_task(request["params"])
+        task, context_id = await self._submit_and_schedule_task(
+            request["params"], caller_did=caller_did
+        )
 
         async def stream_generator():
             """Stream task status and artifact events from storage updates."""

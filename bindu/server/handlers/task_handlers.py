@@ -48,8 +48,17 @@ class TaskHandlers:
     error_response_creator: Any = None
 
     @trace_task_operation("get_task")
-    async def get_task(self, request: GetTaskRequest) -> GetTaskResponse:
-        """Get a task and return it to the client."""
+    async def get_task(
+        self,
+        request: GetTaskRequest,
+        caller_did: str | None = None,
+    ) -> GetTaskResponse:
+        """Get a task and return it to the client.
+
+        ``caller_did`` is accepted by the signature for Phase 1 uniformity but
+        not yet consulted. Phase 2 will filter access by comparing it against
+        the task's ``owner_did``.
+        """
         task_id = request["params"]["task_id"]
         history_length = request["params"].get("history_length")
         task = await self.storage.load_task(task_id, history_length)
@@ -63,7 +72,11 @@ class TaskHandlers:
 
     @trace_task_operation("cancel_task")
     @track_active_task
-    async def cancel_task(self, request: CancelTaskRequest) -> CancelTaskResponse:
+    async def cancel_task(
+        self,
+        request: CancelTaskRequest,
+        caller_did: str | None = None,
+    ) -> CancelTaskResponse:
         """Cancel a running task."""
         task_id = request["params"]["task_id"]
         task = await self.storage.load_task(task_id)
@@ -95,8 +108,16 @@ class TaskHandlers:
         return CancelTaskResponse(jsonrpc="2.0", id=request["id"], result=task)
 
     @trace_task_operation("list_tasks", include_params=False)
-    async def list_tasks(self, request: ListTasksRequest) -> ListTasksResponse:
-        """List all tasks in storage."""
+    async def list_tasks(
+        self,
+        request: ListTasksRequest,
+        caller_did: str | None = None,
+    ) -> ListTasksResponse:
+        """List all tasks in storage.
+
+        ``caller_did`` is accepted but unused in Phase 1. Phase 2 will scope
+        the listing to rows owned by the caller.
+        """
         tasks = await self.storage.list_tasks(request["params"].get("length"))
 
         if tasks is None:
@@ -107,7 +128,11 @@ class TaskHandlers:
         return ListTasksResponse(jsonrpc="2.0", id=request["id"], result=tasks)
 
     @trace_task_operation("task_feedback")
-    async def task_feedback(self, request: TaskFeedbackRequest) -> TaskFeedbackResponse:
+    async def task_feedback(
+        self,
+        request: TaskFeedbackRequest,
+        caller_did: str | None = None,
+    ) -> TaskFeedbackResponse:
         """Submit feedback for a completed task."""
         task_id = request["params"]["task_id"]
         task = await self.storage.load_task(task_id)
