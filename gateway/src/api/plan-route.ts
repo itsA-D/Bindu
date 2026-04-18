@@ -1,8 +1,13 @@
 import { Effect, Stream } from "effect"
 import type { Context as HonoContext } from "hono"
 import { streamSSE } from "hono/streaming"
-import { PlanRequest, Service as PlannerService, type Interface as PlannerInterface } from "../planner"
-import { Service as BusService, BusEvent, type Interface as BusInterface } from "../bus"
+import {
+  PlanRequest,
+  Service as PlannerService,
+  type Interface as PlannerInterface,
+  type SessionContext,
+} from "../planner"
+import { Service as BusService, type Interface as BusInterface } from "../bus"
 import { Service as ConfigService, type Config } from "../config"
 import { PromptEvent } from "../session/prompt"
 import type { z } from "zod"
@@ -10,10 +15,19 @@ import type { z } from "zod"
 /**
  * POST /plan — External-facing Hono handler.
  *
+ * Flow:
+ *   1. Auth + parse.
+ *   2. Resolve (create-or-resume) the session BEFORE opening the SSE stream.
+ *      This gives us sessionID up-front so bus subscribers can filter by it.
+ *      Without the filter, concurrent /plan requests share the global bus
+ *      and leak frames into each other's SSE streams.
+ *   3. Open SSE, emit `session`, install sessionID-filtered subscribers,
+ *      run the plan.
+ *
  * Contract (see gateway/plans/PLAN.md §API):
  *   request:  { question, agents[], preferences?, session_id? }
- *   response: SSE stream — session, plan, task.started*, task.artifact*,
- *             task.finished*, final, done
+ *   response: SSE stream — session, plan, text.delta*, task.started*,
+ *             task.artifact*, task.finished*, final, done
  */
 
 type ConfigInfo = z.infer<typeof Config>
@@ -51,15 +65,41 @@ async function handleRequest(
     return c.json({ error: "invalid_request", detail: (e as Error).message }, 400)
   }
 
-  // 3. SSE response — subscribe to bus BEFORE kicking off the plan so we
-  // don't miss the first event.
+  // 3. Resolve session BEFORE opening SSE — required so subscribers can
+  //    filter events by sessionID. Any failure here returns plain JSON.
+  let sessionCtx: SessionContext
+  try {
+    sessionCtx = await Effect.runPromise(planner.prepareSession(request))
+  } catch (e) {
+    return c.json({ error: "session_failed", detail: (e as Error).message }, 500)
+  }
+
+  // 4. SSE response
   return streamSSE(c, async (stream) => {
     const ac = new AbortController()
     c.req.raw.signal?.addEventListener("abort", () => ac.abort(), { once: true })
 
-    // Spawn subscribers. Their readers write SSE frames; when the AbortController
-    // fires, Effect.runPromise resolves (stream closes) and we stop writing.
-    spawnReader(ac.signal, bus.subscribe(PromptEvent.Started), async (evt) => {
+    // Filter events to THIS session only. Without this filter, concurrent
+    // /plan requests share the global bus and every subscriber receives
+    // every other request's frames.
+    const ownEvent = <P extends { sessionID: string }>(
+      src: Stream.Stream<{ type: string; properties: P }>,
+    ) => src.pipe(Stream.filter((e) => e.properties.sessionID === sessionCtx.sessionID))
+
+    // Emit `session` first so clients can correlate every subsequent frame
+    // to the right session row.
+    await stream.writeSSE({
+      event: "session",
+      data: JSON.stringify({
+        session_id: sessionCtx.sessionID,
+        external_session_id: sessionCtx.externalSessionID,
+        created: !sessionCtx.existing,
+      }),
+    })
+
+    // Install subscribers BEFORE runPlan publishes, so we don't miss the
+    // first event.
+    spawnReader(ac.signal, ownEvent(bus.subscribe(PromptEvent.Started)), async (evt) => {
       await stream.writeSSE({
         event: "plan",
         data: JSON.stringify({
@@ -69,7 +109,7 @@ async function handleRequest(
       })
     })
 
-    spawnReader(ac.signal, bus.subscribe(PromptEvent.TextDelta), async (evt) => {
+    spawnReader(ac.signal, ownEvent(bus.subscribe(PromptEvent.TextDelta)), async (evt) => {
       await stream.writeSSE({
         event: "text.delta",
         data: JSON.stringify({
@@ -80,7 +120,7 @@ async function handleRequest(
       })
     })
 
-    spawnReader(ac.signal, bus.subscribe(PromptEvent.ToolCallStart), async (evt) => {
+    spawnReader(ac.signal, ownEvent(bus.subscribe(PromptEvent.ToolCallStart)), async (evt) => {
       await stream.writeSSE({
         event: "task.started",
         data: JSON.stringify({
@@ -92,7 +132,7 @@ async function handleRequest(
       })
     })
 
-    spawnReader(ac.signal, bus.subscribe(PromptEvent.ToolCallEnd), async (evt) => {
+    spawnReader(ac.signal, ownEvent(bus.subscribe(PromptEvent.ToolCallEnd)), async (evt) => {
       await stream.writeSSE({
         event: "task.artifact",
         data: JSON.stringify({
@@ -111,7 +151,7 @@ async function handleRequest(
       })
     })
 
-    spawnReader(ac.signal, bus.subscribe(PromptEvent.Finished), async (evt) => {
+    spawnReader(ac.signal, ownEvent(bus.subscribe(PromptEvent.Finished)), async (evt) => {
       await stream.writeSSE({
         event: "final",
         data: JSON.stringify({
@@ -122,23 +162,11 @@ async function handleRequest(
       })
     })
 
-    // 4. Kick off the plan
+    // 5. Run the plan (events fire into the subscribers above)
     try {
-      const result = await Effect.runPromise(
-        planner.startPlan(request, { abort: ac.signal }),
-      )
+      await Effect.runPromise(planner.runPlan(sessionCtx, request, { abort: ac.signal }))
 
-      await stream.writeSSE({
-        event: "session",
-        data: JSON.stringify({
-          session_id: result.sessionID,
-          external_session_id: result.externalSessionID,
-          created: !request.session_id,
-        }),
-      })
-
-      // Give the bus event subscribers a tick to flush the final frame
-      // before closing.
+      // Give the bus event subscribers a tick to flush before closing.
       await new Promise((r) => setTimeout(r, 100))
     } catch (e) {
       await stream.writeSSE({
