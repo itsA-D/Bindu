@@ -60,6 +60,31 @@ export const layer = Layer.effect(
     const provider = yield* ProviderService
 
     /**
+     * Per-session promise dedupe map.
+     *
+     * Two concurrent /plan requests on the same session_id used to both
+     * trigger compaction: both would read the same history, both would
+     * call the summarizer LLM (doubling cost), and both would UPDATE
+     * gateway_sessions.compaction_summary — last writer wins. Since
+     * summaries are LLM-generated and non-deterministic even at low
+     * temperature, the losing paragraph might have captured facts the
+     * winner omitted, so concurrent compactions could silently lose
+     * information.
+     *
+     * We dedupe at the application layer: if a compaction is already
+     * in flight for a session, subsequent callers await the SAME
+     * promise and receive the same CompactOutcome. Only one LLM call,
+     * only one UPDATE, no race on the summary column.
+     *
+     * Limitation: this is per-process state. In a horizontally-scaled
+     * deployment (multiple gateway processes fronting the same Supabase),
+     * two processes could still race. Phase 2 should add a version
+     * column or Postgres advisory lock pattern that spans processes.
+     * Single-process Phase 1 gets the correct behavior today.
+     */
+    const inflight = new Map<SessionID, Promise<CompactOutcome>>()
+
+    /**
      * Split history at a TURN boundary — a user message — with at least
      * `minKeepTail` messages in the tail.
      *
@@ -201,6 +226,28 @@ export const layer = Layer.effect(
       }
     }
 
+    /**
+     * Run `producer` exclusively for `sessionID`. If another call is
+     * already in flight, return its promise instead of starting a new
+     * one. The map entry is cleared in a finally block so a completed
+     * (or failed) compaction doesn't block the next one.
+     */
+    function dedupe(
+      sessionID: SessionID,
+      producer: () => Promise<CompactOutcome>,
+    ): Promise<CompactOutcome> {
+      const existing = inflight.get(sessionID)
+      if (existing) return existing
+      const p = producer().finally(() => {
+        // Clear only if the entry is still ours — defensive against a
+        // second request somehow swapping entries (shouldn't happen, but
+        // cheap to guard).
+        if (inflight.get(sessionID) === p) inflight.delete(sessionID)
+      })
+      inflight.set(sessionID, p)
+      return p
+    }
+
     const compactIfNeeded: Interface["compactIfNeeded"] = (input) =>
       Effect.gen(function* () {
         const history = yield* sessions.history(input.sessionID)
@@ -212,12 +259,14 @@ export const layer = Layer.effect(
         const llm = yield* provider.model(input.model)
         return yield* Effect.tryPromise({
           try: () =>
-            runCompaction(
-              history,
-              llm,
-              input.keepTail ?? 4,
-              input.sessionID,
-              input.abortSignal,
+            dedupe(input.sessionID, () =>
+              runCompaction(
+                history,
+                llm,
+                input.keepTail ?? 4,
+                input.sessionID,
+                input.abortSignal,
+              ),
             ),
           catch: (e) => (e instanceof Error ? e : new Error(String(e))),
         })
@@ -229,12 +278,14 @@ export const layer = Layer.effect(
         const llm = yield* provider.model(input.model)
         return yield* Effect.tryPromise({
           try: () =>
-            runCompaction(
-              history,
-              llm,
-              input.keepTail ?? 4,
-              input.sessionID,
-              input.abortSignal,
+            dedupe(input.sessionID, () =>
+              runCompaction(
+                history,
+                llm,
+                input.keepTail ?? 4,
+                input.sessionID,
+                input.abortSignal,
+              ),
             ),
           catch: (e) => (e instanceof Error ? e : new Error(String(e))),
         })
