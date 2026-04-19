@@ -36,10 +36,25 @@ import type { SessionID } from "../session/schema"
 // Plan request shape (matches PLAN.md §API)
 // --------------------------------------------------------------------
 
+// External /plan API — agent auth descriptor.
+//
+// Must stay in sync with ``PeerAuth`` in ``src/bindu/auth/resolver.ts``.
+// They're two schemas for the same concept: PeerAuthRequest validates
+// the incoming /plan request, PeerAuth is the internal shape the peer
+// resolver understands. Drift between them causes silent acceptance of
+// auth types the transport can't actually execute (or, as happened
+// before this comment, the reverse: /plan rejects auth types the
+// transport fully supports).
 export const PeerAuthRequest = z.discriminatedUnion("type", [
   z.object({ type: z.literal("none") }),
   z.object({ type: z.literal("bearer"), token: z.string() }),
   z.object({ type: z.literal("bearer_env"), envVar: z.string() }),
+  z.object({
+    type: z.literal("did_signed"),
+    // Optional — see PeerAuth in resolver.ts for the full semantics.
+    // Omit to use the gateway's auto-acquired Hydra token.
+    tokenEnvVar: z.string().optional(),
+  }),
 ])
 
 export const SkillRequest = z.object({
@@ -65,18 +80,30 @@ export const AgentRequest = z.object({
 })
 export type AgentRequest = z.infer<typeof AgentRequest>
 
+// Preferences on /plan — keys match the documented external API shape
+// in gateway/plans/PLAN.md: snake_case. An earlier draft declared them
+// camelCase (``responseFormat``/``maxHops``/``timeoutMs``/``maxSteps``);
+// clients sending docs-compliant ``max_steps`` landed on undefined
+// silently via ``.passthrough()``, dropping the cap and falling back
+// to ``plannerAgent.steps``. Aligning the schema with the docs fixes
+// the silent discard. ``.passthrough()`` stays so forward-compat
+// extra keys don't break old clients.
 export const PlanPreferences = z
   .object({
-    responseFormat: z.string().optional(),
-    maxHops: z.number().int().positive().optional(),
-    timeoutMs: z.number().int().positive().optional(),
-    maxSteps: z.number().int().positive().optional(),
+    response_format: z.string().optional(),
+    max_hops: z.number().int().positive().optional(),
+    timeout_ms: z.number().int().positive().optional(),
+    max_steps: z.number().int().positive().optional(),
   })
   .partial()
   .passthrough()
 
 export const PlanRequest = z.object({
-  question: z.string(),
+  // Non-empty — Anthropic (and some other providers) reject an empty
+  // user message with a 400 mid-stream, which surfaces to the caller
+  // as a vague ``"Provider returned error"``. Validating here gives
+  // a clean 400 with ``invalid_request`` at the API boundary instead.
+  question: z.string().min(1, "question must be a non-empty string"),
   agents: z.array(AgentRequest).default([]),
   preferences: PlanPreferences.optional(),
   session_id: z.string().optional(),
@@ -171,7 +198,7 @@ export const layer = Layer.effect(
           return yield* Effect.fail(new Error('planner: no "planner" agent configured'))
         }
 
-        const model = plannerAgent.model ?? "anthropic/claude-opus-4-7"
+        const model = plannerAgent.model ?? "openrouter/anthropic/claude-sonnet-4.6"
         yield* compaction
           .compactIfNeeded({
             sessionID: ctx.sessionID,
@@ -216,7 +243,7 @@ export const layer = Layer.effect(
           ],
           tools,
           modelOverride: plannerAgent.model,
-          stepsOverride: request.preferences?.maxSteps ?? plannerAgent.steps,
+          stepsOverride: request.preferences?.max_steps ?? plannerAgent.steps,
           abort: opts?.abort,
         })
 
@@ -261,7 +288,25 @@ function buildSkillTool(peer: PeerDescriptor, skill: SkillRequest, deps: BuildTo
   const toolId = normalizeToolName(`call_${peer.name}_${skill.id}`)
   const description = padToolDescription(peer, skill)
 
-  const parameters = jsonSchemaToZod(skill.inputSchema) ?? z.object({}).passthrough()
+  // Default schema when the skill declares no inputSchema: a single
+  // ``input`` string field the planner fills with natural language
+  // for the agent. Without this, the Zod default was
+  // ``z.object({}).passthrough()`` — an empty object. Empty gives the
+  // planner LLM no signal about what to pass, so it emitted ``{}``
+  // and the downstream agent saw no query. The fix tells the LLM
+  // explicitly: "put your natural-language request here, it'll be
+  // forwarded as the user message." The ``execute`` wrapper below
+  // unwraps ``{input: "..."}`` back to plain text so conversational
+  // agents see a user message, not a stringified JSON object.
+  const parameters =
+    jsonSchemaToZod(skill.inputSchema) ??
+    z.object({
+      input: z
+        .string()
+        .describe(
+          "Natural-language request for the agent. Pass the user's exact question (or your refined sub-task). Forwarded as the user message the agent replies to.",
+        ),
+    })
 
   const info = define(toolId, {
     description,
@@ -279,12 +324,17 @@ function buildSkillTool(peer: PeerDescriptor, skill: SkillRequest, deps: BuildTo
         })
         deps.tasksRecorded.push(taskRow.id)
 
-        // 2. Execute via the Bindu client
+        // 2. Execute via the Bindu client.
+        // If the tool's args are just ``{input: "..."}`` (the default-
+        // schema shape), unwrap to plain text so the peer sees a
+        // normal user message. Structured skills with richer schemas
+        // get JSON-serialized as before.
+        const peerInput = extractPlainTextInput(args)
         const outcome = yield* deps.client
           .callPeer({
             peer,
             skill: skill.id,
-            input: JSON.stringify(args),
+            input: peerInput,
             contextId: deps.contextId,
             signal: ctx.abort,
           })
@@ -306,13 +356,18 @@ function buildSkillTool(peer: PeerDescriptor, skill: SkillRequest, deps: BuildTo
         // and cross-system correlation — the gateway's internal row id
         // (taskRow.id) is never seen by the peer.
         const remoteTaskId = outcome.task.id
-        const finalState =
-          outcome.task.status.state === "completed" ||
-          outcome.task.status.state === "failed" ||
-          outcome.task.status.state === "canceled" ||
-          outcome.task.status.state === "rejected"
-            ? (outcome.task.status.state as any)
-            : "completed"
+
+        // Record the ACTUAL state the remote reported. Previously this
+        // fell back to "completed" for every non-terminal state, which
+        // hid input-required / payment-required / auth-required /
+        // trust-verification-required / working in the audit log —
+        // operators investigating a stuck plan couldn't tell why a
+        // task paused. See
+        // https://docs.getbindu.com/bindu/concepts/task-first-and-architecture
+        // for the full state list. Terminal states pass through; non-
+        // terminal states are preserved so downstream tools (analytics,
+        // dashboards) can reason about them.
+        const finalState = outcome.task.status.state as any
 
         const outputText = extractOutputText(outcome.task)
 
@@ -368,6 +423,32 @@ function buildSkillTool(peer: PeerDescriptor, skill: SkillRequest, deps: BuildTo
 
 function normalizeToolName(raw: string): string {
   return raw.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 80)
+}
+
+/**
+ * If ``args`` is the default single-field shape ``{input: "..."}`` (or
+ * a bare string), return the inner string so the peer sees a natural
+ * user message. Otherwise JSON-stringify — structured skills with
+ * richer schemas expect a JSON object on the wire.
+ *
+ * Exported via the default tool-building path; the peer's Bindu
+ * handler ultimately receives ``parts: [{kind: "text", text: <this>}]``.
+ * A conversational agent then replies to the text as if it came from
+ * the user, which is almost always what the planner intends.
+ */
+export function extractPlainTextInput(args: unknown): string {
+  if (typeof args === "string") return args
+  if (
+    args !== null &&
+    typeof args === "object" &&
+    !Array.isArray(args) &&
+    Object.keys(args).length === 1 &&
+    "input" in args &&
+    typeof (args as { input: unknown }).input === "string"
+  ) {
+    return (args as { input: string }).input
+  }
+  return JSON.stringify(args)
 }
 
 /**

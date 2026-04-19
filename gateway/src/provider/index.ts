@@ -1,41 +1,146 @@
 import { Context, Effect, Layer } from "effect"
-import { anthropic, createAnthropic } from "@ai-sdk/anthropic"
-import { openai, createOpenAI } from "@ai-sdk/openai"
+import { createOpenAI } from "@ai-sdk/openai"
 import type { LanguageModel } from "ai"
 import { Service as ConfigService, type Config } from "../config"
 import type { z } from "zod"
 
 /**
- * Provider service — Phase 1 minimal.
+ * Provider service — OpenRouter-only.
  *
- * Looks up an AI-SDK LanguageModel handle by "providerId/modelId" string,
- * using the `provider` block in gateway config for API keys and optional
- * baseURL overrides.
+ * Looks up an AI-SDK LanguageModel handle by ``"openrouter/<modelId>"``
+ * where ``modelId`` is whatever OpenRouter publishes for that model
+ * (for example ``openai/gpt-4o-mini`` or
+ * ``anthropic/claude-sonnet-4.6``).
  *
- * This is a deliberate simplification compared to OpenCode's full provider
- * abstraction (which handles plugins, transform chains, SDK discovery, usage
- * telemetry, per-provider auth flows). For the gateway's planner we only
- * need: given a model string, give me a model handle the AI SDK can stream.
+ * Why a single provider: we ship every agent (gateway planner + the
+ * fleet) on OpenRouter. Supporting the Anthropic or OpenAI SDKs
+ * directly was optionality nobody used and added two env vars and a
+ * dependency we could drop. OpenRouter exposes an OpenAI-compatible
+ * API, so a single ``@ai-sdk/openai`` client with a baseURL override
+ * covers every model on the platform.
+ *
+ * On every outbound request the gateway's fetch wrapper injects two
+ * OpenRouter-specific request-body fields:
+ *
+ *   - ``cache_control: { type: "ephemeral" }`` — enables OpenRouter's
+ *     automatic-breakpoint prompt caching. Ignored by providers that
+ *     don't support caching, honored by Anthropic / Gemini.
+ *   - ``models: [primary, ...fallbacks]`` + ``route: "fallback"`` —
+ *     if ``provider.openrouter.fallbackModels`` is configured,
+ *     OpenRouter tries each model in order on transport error.
+ *     Operators keep the gateway alive when a single model goes
+ *     rate-limited or upstream-down without per-call retry code.
+ *
+ * This is a deliberate simplification compared to OpenCode's full
+ * provider abstraction. For the gateway's planner we only need: given
+ * a model string, give me a model handle the AI SDK can stream.
  */
 
-const SUPPORTED_PROVIDERS = ["anthropic", "openai"] as const
+const SUPPORTED_PROVIDERS = ["openrouter"] as const
 export type ProviderId = (typeof SUPPORTED_PROVIDERS)[number]
+
+const OPENROUTER_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 export function parseModelId(s: string): { providerId: ProviderId; modelId: string } {
   const slash = s.indexOf("/")
   if (slash === -1) {
     throw new Error(
-      `provider: model id must be "provider/model" (got "${s}"). Example: "anthropic/claude-opus-4-7".`,
+      `provider: model id must be "provider/model" (got "${s}"). ` +
+        `Example: "openrouter/anthropic/claude-sonnet-4.6".`,
     )
   }
   const providerId = s.slice(0, slash) as ProviderId
   const modelId = s.slice(slash + 1)
   if (!(SUPPORTED_PROVIDERS as readonly string[]).includes(providerId)) {
     throw new Error(
-      `provider: unsupported provider "${providerId}" (supported: ${SUPPORTED_PROVIDERS.join(", ")})`,
+      `provider: unsupported provider "${providerId}" ` +
+        `(supported: ${SUPPORTED_PROVIDERS.join(", ")})`,
     )
   }
   return { providerId, modelId }
+}
+
+/**
+ * Inject OpenRouter's prompt-caching marker at the top level of a
+ * chat-completions request body.
+ *
+ * Per OpenRouter's spec (``docs/guides/best-practices/prompt-caching``):
+ *
+ *   - **OpenAI / DeepSeek / Grok / Groq / Moonshot** — ignore the
+ *     ``cache_control`` field. Their caching is automatic; we send the
+ *     marker for consistency but it changes nothing.
+ *   - **Anthropic Claude** — top-level ``cache_control`` enables
+ *     OpenRouter's *automatic breakpoint* mode, where OpenRouter
+ *     places cache boundaries at the end of the growing message
+ *     history. This is the minimum-code, maximum-coverage option and
+ *     the right default for a planner whose system prompt + tool
+ *     defs stay mostly-stable across turns.
+ *   - **Google Gemini 2.5** — same marker shape; OpenRouter handles.
+ *
+ * Adding the marker is safe across every model — providers that
+ * don't understand it strip it before the upstream call.
+ */
+export function injectCacheControl(bodyString: string): string {
+  const parsed = safeJsonParse(bodyString)
+  if (!parsed) return bodyString
+  if (parsed.cache_control) return bodyString // respect explicit upstream marker
+  parsed.cache_control = { type: "ephemeral" }
+  return JSON.stringify(parsed)
+}
+
+/**
+ * Inject OpenRouter's model-fallback array into the request body.
+ *
+ * Per OpenRouter's routing docs: ``models: [primary, fallback1, ...]``
+ * plus ``route: "fallback"`` instructs OpenRouter to try each model in
+ * order, advancing to the next only if the current one errors
+ * (rate-limited, upstream-down, etc.). When ``models`` is present
+ * OpenRouter ignores ``model`` — we preserve the original ``model``
+ * for clarity but add ``models`` in front with the primary first.
+ *
+ * No-ops when ``fallbackModels`` is empty (common case — no fallback
+ * configured) or when the body has no ``model`` field (shouldn't
+ * happen for chat-completions, but we're defensive).
+ */
+export function injectFallbackModels(
+  bodyString: string,
+  fallbackModels: readonly string[],
+): string {
+  if (fallbackModels.length === 0) return bodyString
+  const parsed = safeJsonParse(bodyString)
+  if (!parsed) return bodyString
+  const primary = typeof parsed.model === "string" ? parsed.model : null
+  if (!primary) return bodyString
+  if (Array.isArray(parsed.models)) return bodyString // respect upstream
+  parsed.models = [primary, ...fallbackModels]
+  parsed.route = "fallback"
+  return JSON.stringify(parsed)
+}
+
+function safeJsonParse(s: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(s)
+    return v && typeof v === "object" ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/** Wrap a ``fetch`` to inject cache_control + fallback models on JSON POSTs. */
+function openrouterFetch(
+  opts: { fallbackModels?: readonly string[] },
+  inner: typeof fetch = fetch,
+): typeof fetch {
+  return async (input, init) => {
+    if (init?.body && typeof init.body === "string") {
+      let body = injectCacheControl(init.body)
+      if (opts.fallbackModels && opts.fallbackModels.length > 0) {
+        body = injectFallbackModels(body, opts.fallbackModels)
+      }
+      return inner(input, { ...init, body })
+    }
+    return inner(input, init)
+  }
 }
 
 export interface Interface {
@@ -51,29 +156,27 @@ export const layer = Layer.effect(
     const providers: z.infer<typeof Config>["provider"] = config.provider
 
     function build(providerId: ProviderId, modelId: string): LanguageModel {
-      const providerCfg = providers[providerId]
-      switch (providerId) {
-        case "anthropic": {
-          if (providerCfg?.apiKey || providerCfg?.baseURL) {
-            const p = createAnthropic({
-              apiKey: providerCfg.apiKey,
-              baseURL: providerCfg.baseURL,
-            })
-            return p(modelId)
-          }
-          return anthropic(modelId)
-        }
-        case "openai": {
-          if (providerCfg?.apiKey || providerCfg?.baseURL) {
-            const p = createOpenAI({
-              apiKey: providerCfg.apiKey,
-              baseURL: providerCfg.baseURL,
-            })
-            return p(modelId)
-          }
-          return openai(modelId)
-        }
-      }
+      const providerCfg = providers[providerId] as
+        | { apiKey?: string; baseURL?: string; fallbackModels?: readonly string[] }
+        | undefined
+      // OpenRouter's API is OpenAI-compatible — one @ai-sdk/openai
+      // client pointed at OpenRouter's baseURL handles every model.
+      //
+      // IMPORTANT: use ``.chat()`` explicitly, not the default callable.
+      // ``@ai-sdk/openai`` v3 defaults to OpenAI's newer Responses API
+      // (``/v1/responses``). OpenRouter only implements the older Chat
+      // Completions API (``/v1/chat/completions``). Using the default
+      // callable produces "Invalid Responses API request" from
+      // OpenRouter at the first LLM call.
+      //
+      // The ``fetch`` wrapper injects cache_control + fallback models.
+      // See ``injectCacheControl`` + ``injectFallbackModels`` above.
+      const p = createOpenAI({
+        apiKey: providerCfg?.apiKey,
+        baseURL: providerCfg?.baseURL ?? OPENROUTER_DEFAULT_BASE_URL,
+        fetch: openrouterFetch({ fallbackModels: providerCfg?.fallbackModels }),
+      })
+      return p.chat(modelId)
     }
 
     return Service.of({

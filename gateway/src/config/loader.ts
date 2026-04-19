@@ -116,13 +116,32 @@ function envOverrides(base: Record<string, any>): Record<string, any> {
     }
   }
 
-  if (process.env.ANTHROPIC_API_KEY) {
+  // OpenRouter is the single supported LLM provider — see
+  // src/provider/index.ts for the rationale. The env hook wires
+  // OpenRouter's OpenAI-compatible API (baseURL filled in by the
+  // provider layer if not explicitly set in a config file).
+  if (process.env.OPENROUTER_API_KEY) {
     out.provider = out.provider ?? {}
-    out.provider.anthropic = { ...out.provider.anthropic, apiKey: process.env.ANTHROPIC_API_KEY }
+    out.provider.openrouter = {
+      ...out.provider.openrouter,
+      apiKey: process.env.OPENROUTER_API_KEY,
+    }
   }
-  if (process.env.OPENAI_API_KEY) {
-    out.provider = out.provider ?? {}
-    out.provider.openai = { ...out.provider.openai, apiKey: process.env.OPENAI_API_KEY }
+
+  // Optional: comma-separated fallback model IDs. When primary fails
+  // (rate limit, upstream error), OpenRouter tries each in order.
+  // Example: OPENROUTER_FALLBACK_MODELS="minimax/minimax-m2.7,openai/gpt-4o-mini"
+  if (process.env.OPENROUTER_FALLBACK_MODELS) {
+    const fallbacks = process.env.OPENROUTER_FALLBACK_MODELS.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (fallbacks.length > 0) {
+      out.provider = out.provider ?? {}
+      out.provider.openrouter = {
+        ...out.provider.openrouter,
+        fallbackModels: fallbacks,
+      }
+    }
   }
 
   return out

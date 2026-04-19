@@ -124,11 +124,18 @@ async function handleRequest(
     })
 
     spawnReader(ac.signal, ownEvent(bus.subscribe(PromptEvent.ToolCallStart)), async (evt) => {
+      const agentName = parseAgentFromTool(evt.properties.tool)
       await stream.writeSSE({
         event: "task.started",
         data: JSON.stringify({
           task_id: evt.properties.callID,
-          agent: parseAgentFromTool(evt.properties.tool),
+          agent: agentName,
+          // Unique identifier for the peer. Agent names are
+          // operator-chosen and can collide across catalogs; DIDs
+          // are the stable cryptographic handle. Null when the
+          // request didn't pin a DID for this peer (auth.type="none"
+          // / "bearer" / "bearer_env" without trust.pinnedDID).
+          agent_did: findPinnedDID(request, agentName),
           skill: parseSkillFromTool(evt.properties.tool),
           input: evt.properties.input,
         }),
@@ -136,10 +143,13 @@ async function handleRequest(
     })
 
     spawnReader(ac.signal, ownEvent(bus.subscribe(PromptEvent.ToolCallEnd)), async (evt) => {
+      const agentName = parseAgentFromTool(evt.properties.tool)
       await stream.writeSSE({
         event: "task.artifact",
         data: JSON.stringify({
           task_id: evt.properties.callID,
+          agent: agentName,
+          agent_did: findPinnedDID(request, agentName),
           content: evt.properties.output,
           title: evt.properties.title,
         }),
@@ -148,6 +158,8 @@ async function handleRequest(
         event: "task.finished",
         data: JSON.stringify({
           task_id: evt.properties.callID,
+          agent: agentName,
+          agent_did: findPinnedDID(request, agentName),
           state: evt.properties.error ? "failed" : "completed",
           ...(evt.properties.error ? { error: evt.properties.error } : {}),
         }),
@@ -262,4 +274,19 @@ function parseAgentFromTool(toolId: string): string {
 function parseSkillFromTool(toolId: string): string {
   const m = toolId.match(/^call_(.+?)_(.+)$/)
   return m?.[2] ?? ""
+}
+
+/**
+ * Resolve a peer's DID from the /plan request's agent catalog.
+ *
+ * DIDs are optional in the API (callers can talk to ``auth.type="none"``
+ * / ``"bearer"`` peers without ever pinning a DID), so this returns
+ * ``null`` when the catalog has no ``trust.pinnedDID`` for the named
+ * peer. SSE consumers treat ``null`` as "no cryptographic identity
+ * declared" — they can still identify the peer by name for display,
+ * just without the stable unique handle.
+ */
+function findPinnedDID(request: PlanRequest, agentName: string): string | null {
+  const entry = request.agents.find((a) => a.name === agentName)
+  return entry?.trust?.pinnedDID ?? null
 }
