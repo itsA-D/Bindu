@@ -1,4 +1,6 @@
 import { randomUUID } from "crypto"
+import type { PeerAuth } from "../auth/resolver"
+import type { LocalIdentity } from "../identity/local"
 import { Task, isTerminal, needsCallerAction, type Message } from "../protocol/types"
 import { Normalize } from "../protocol"
 import { BinduError, ErrorCode, SCHEMA_MISMATCH_CODES } from "../protocol/jsonrpc"
@@ -26,7 +28,12 @@ const DEFAULT_MAX_POLLS = 60
 
 export interface SendAndPollInput {
   peerUrl: string
-  headers?: Record<string, string>
+  /** Peer auth descriptor — rpc builds headers per-call. */
+  auth?: PeerAuth
+  /** Gateway identity — required iff ``auth.type === "did_signed"``. */
+  identity?: LocalIdentity
+  /** Extra static headers (tracing, etc.) merged on top of auth. */
+  extraHeaders?: Record<string, string>
   message: Message
   /** Output MIME types to include in `configuration.acceptedOutputModes`. */
   acceptedOutputModes?: string[]
@@ -53,7 +60,9 @@ export interface SendAndPollOutcome {
 export async function sendAndPoll(input: SendAndPollInput): Promise<SendAndPollOutcome> {
   const baseRpc: Omit<RpcInput, "request"> = {
     peerUrl: input.peerUrl,
-    headers: input.headers,
+    auth: input.auth,
+    identity: input.identity,
+    extraHeaders: input.extraHeaders,
     signal: input.signal,
     timeoutMs: input.timeoutMs,
     fetch: input.fetch,
