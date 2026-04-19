@@ -65,11 +65,18 @@ export const layer = Layer.effect(
       const providerCfg = providers[providerId]
       // OpenRouter's API is OpenAI-compatible — one @ai-sdk/openai
       // client pointed at OpenRouter's baseURL handles every model.
+      //
+      // IMPORTANT: use ``.chat()`` explicitly, not the default callable.
+      // ``@ai-sdk/openai`` v3 defaults to OpenAI's newer Responses API
+      // (``/v1/responses``). OpenRouter only implements the older Chat
+      // Completions API (``/v1/chat/completions``). Using the default
+      // callable produces "Invalid Responses API request" from
+      // OpenRouter at the first LLM call.
       const p = createOpenAI({
         apiKey: providerCfg?.apiKey,
         baseURL: providerCfg?.baseURL ?? OPENROUTER_DEFAULT_BASE_URL,
       })
-      return p(modelId)
+      return p.chat(modelId)
     }
 
     return Service.of({
