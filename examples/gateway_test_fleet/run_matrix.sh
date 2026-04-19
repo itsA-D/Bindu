@@ -102,6 +102,9 @@ EOF
 }
 
 case_Q6() {
+  # Empty question — should be rejected at the API boundary with a
+  # clean 400, not allowed to crash the planner mid-stream. The
+  # runner recognizes HTTP 400 as the expected success for this case.
   cat <<EOF
 {
   "question": "",
@@ -112,6 +115,8 @@ case_Q6() {
 }
 EOF
 }
+# Cases that must be rejected upfront with HTTP 400.
+EXPECT_400=("Q6")
 
 case_Q7() {
   cat <<EOF
@@ -202,6 +207,37 @@ case_Q12() {
 EOF
 }
 
+case_Q_MULTIHOP() {
+  # Complex multi-hop chain — each agent's output must feed the next.
+  #
+  # Goal: "Research the population of Tokyo, compute what 0.5% of it
+  # is, then write a 4-line poem about that number of people."
+  #
+  # Forces the planner to:
+  #   1. research_agent → fetch current Tokyo population (web search)
+  #   2. math_agent    → compute 0.5% of the returned number
+  #   3. poet_agent    → write a 4-line poem using the computed value
+  #
+  # Each step depends on the prior. If the planner chains correctly,
+  # we'll see three task.started events in order, each consuming the
+  # previous artifact. If it skips or parallelizes, the math step
+  # will have no number to work with and surface an error.
+  cat <<EOF
+{
+  "question": "First research the current approximate population of Tokyo (cite the source). Then compute what exactly 0.5% of that population is. Finally write a 4-line poem celebrating that number of people. Do all three steps in order.",
+  "agents": [
+    { "name": "research", "endpoint": "${RESEARCH_URL}", ${AUTH_BLOCK},
+      "skills": [{ "id": "web_research", "description": "Web search and summarize a factual question with sources" }] },
+    { "name": "math",     "endpoint": "${MATH_URL}",     ${AUTH_BLOCK},
+      "skills": [{ "id": "solve", "description": "Solve math problems step-by-step" }] },
+    { "name": "poet",     "endpoint": "${POET_URL}",     ${AUTH_BLOCK},
+      "skills": [{ "id": "write_poem", "description": "Write a short (max 4-line) poem on the given topic" }] }
+  ],
+  "preferences": { "max_steps": 10 }
+}
+EOF
+}
+
 case_Q13() {
   # Same session across two requests. Second call asks about the first.
   # Skipped by default — caller must pass $SESSION_ID the second time.
@@ -217,7 +253,7 @@ case_Q13() {
 EOF
 }
 
-ALL_CASES=(Q1 Q2 Q3 Q4 Q5 Q6 Q7 Q8 Q9 Q10 Q11 Q12)
+ALL_CASES=(Q1 Q2 Q3 Q4 Q5 Q6 Q7 Q8 Q9 Q10 Q11 Q12 Q_MULTIHOP)
 
 # --------------------------------------------------------------------
 # Runner
@@ -252,6 +288,23 @@ run_case() {
     || true)
 
   echo "${http_code}" > "${status_file}"
+
+  # Is this case expected to be rejected upfront?
+  local expect_400=false
+  for id in "${EXPECT_400[@]:-}"; do
+    [[ "${id}" == "${cid}" ]] && expect_400=true
+  done
+
+  if [[ "${expect_400}" == "true" ]]; then
+    if [[ "${http_code}" == "400" ]]; then
+      echo "  HTTP 400 (expected) — request rejected at API boundary ✓"
+      return 0
+    fi
+    echo "  HTTP ${http_code} (expected 400) — body:"
+    cat "${out}" | sed 's/^/    /'
+    echo "  ✗ ${cid} failed (expected 400, got ${http_code})"
+    return 1
+  fi
 
   if [[ "${http_code}" != "200" ]]; then
     echo "  HTTP ${http_code} — full body:"
