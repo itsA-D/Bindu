@@ -1,26 +1,45 @@
+import { buildAuthHeaders, type PeerAuth } from "../auth/resolver"
+import type { LocalIdentity } from "../identity/local"
 import { BinduError, JsonRpcResponse, type JsonRpcRequest } from "../protocol/jsonrpc"
 
 /**
  * HTTP transport for Bindu JSON-RPC calls.
  *
  * Thin wrapper over fetch() that:
- *   - serializes the JSON-RPC request body
- *   - attaches auth headers from the caller
- *   - parses the response into a typed { result } | { error }
+ *   - serializes the JSON-RPC request body ONCE
+ *   - builds auth headers per-call (async — the ``did_signed`` variant
+ *     signs the serialized body)
+ *   - parses the response into a typed ``{ result }`` | ``{ error }``
  *   - normalizes transport-level failures into BinduError
  *   - honors abort signal + timeout
  *
- * Does NOT retry — retry policy lives in `poll.ts` where it can make
+ * The "serialize once" invariant is load-bearing: the body signed by
+ * the ``did_signed`` path MUST be byte-for-byte identical to the body
+ * sent on the wire, or the peer's DID middleware will return
+ * ``crypto_mismatch``. Never re-stringify the request between signing
+ * and sending.
+ *
+ * Does NOT retry — retry policy lives in ``poll.ts`` where it can make
  * informed decisions (schema-mismatch flip, auth refresh, etc.).
  */
 
 export interface RpcInput {
   /** Peer root URL (e.g. "https://research.acme.com"). Trailing slash optional. */
   peerUrl: string
-  /** The JSON-RPC request body. `id` is caller-assigned. */
+  /** The JSON-RPC request body. ``id`` is caller-assigned. */
   request: JsonRpcRequest
-  /** Additional headers (typically from `authHeaders(peer.auth)`). */
-  headers?: Record<string, string>
+  /** Peer auth descriptor. When present, rpc() builds the
+   *  Authorization header (and X-DID-* headers for ``did_signed``)
+   *  based on this. */
+  auth?: PeerAuth
+  /** Gateway's DID identity. Required when ``auth.type === "did_signed"``
+   *  — the signer needs it to sign the body. Safe to omit for other
+   *  auth types. */
+  identity?: LocalIdentity
+  /** Extra headers that don't depend on the body (e.g. tracing
+   *  propagation). Merged after auth headers so auth can't be
+   *  overridden accidentally. */
+  extraHeaders?: Record<string, string>
   signal?: AbortSignal
   /** Timeout in ms (default 60s). */
   timeoutMs?: number
@@ -50,15 +69,23 @@ export async function rpc<T = unknown>(input: RpcInput): Promise<RpcOutcome<T>> 
   input.signal?.addEventListener("abort", forwardAbort, { once: true })
   const timer = setTimeout(() => ac.abort(), timeoutMs)
 
+  // Serialize once. The same exact bytes are passed both to the signer
+  // (when auth.type === "did_signed") and to the HTTP body — any
+  // second serialization would produce different bytes and break the
+  // signature.
+  const bodyStr = JSON.stringify(input.request)
+
   try {
+    const authHdrs = await buildAuthHeaders(input.auth, bodyStr, input.identity)
     const resp = await fetcher(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
-        ...(input.headers ?? {}),
+        ...(input.extraHeaders ?? {}),
+        ...authHdrs,
       },
-      body: JSON.stringify(input.request),
+      body: bodyStr,
       signal: ac.signal,
     })
 

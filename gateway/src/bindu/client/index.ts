@@ -2,7 +2,8 @@ import { Context, Effect, Layer } from "effect"
 import { randomUUID } from "crypto"
 import type { Message, Part, Task } from "../protocol/types"
 import { sendAndPoll, type SendAndPollOutcome } from "./poll"
-import { authHeaders, type PeerAuth } from "../auth/resolver"
+import { type PeerAuth } from "../auth/resolver"
+import type { LocalIdentity } from "../identity/local"
 import { BinduError, ErrorCode } from "../protocol/jsonrpc"
 import { verifyArtifact } from "../identity/verify"
 import { createResolver, primaryPublicKeyBase58 } from "../identity/resolve"
@@ -75,47 +76,65 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@bindu/Client") {}
 
-export const layer = Layer.effect(
-  Service,
-  Effect.sync(() => {
-    const didResolver = createResolver()
+/**
+ * Build the Client layer with an optional gateway DID identity.
+ *
+ * ``identity`` is what lets the gateway talk to ``did_signed`` peers —
+ * every outbound call to such a peer is signed with this identity's
+ * private key. For ``bearer`` / ``bearer_env`` / ``none`` peers,
+ * identity is ignored and can be omitted (e.g. in tests, or
+ * deployments that don't yet talk to any DID-enforcing agents).
+ *
+ * Exported as a factory so ``index.ts`` can load the identity from
+ * env at boot and inject it once. The default ``layer`` export below
+ * is a no-identity variant for backward compat with existing tests
+ * and any deployment that doesn't enable DID signing.
+ */
+export const makeLayer = (identity?: LocalIdentity) =>
+  Layer.effect(
+    Service,
+    Effect.sync(() => {
+      const didResolver = createResolver()
 
-    const callPeer: Interface["callPeer"] = (input) =>
-      Effect.tryPromise({
-        try: () => runCall(input, didResolver),
-        catch: (e) =>
-          e instanceof BinduError
-            ? e
-            : BinduError.transport(
-                e instanceof Error ? e.message : String(e),
-                input.peer.url,
-                e,
-              ),
-      })
+      const callPeer: Interface["callPeer"] = (input) =>
+        Effect.tryPromise({
+          try: () => runCall(input, didResolver, identity),
+          catch: (e) =>
+            e instanceof BinduError
+              ? e
+              : BinduError.transport(
+                  e instanceof Error ? e.message : String(e),
+                  input.peer.url,
+                  e,
+                ),
+        })
 
-    const cancel: Interface["cancel"] = ({ peer, taskId }) =>
-      Effect.tryPromise({
-        try: () => runCancel(peer, taskId),
-        catch: (e) =>
-          e instanceof BinduError
-            ? e
-            : BinduError.transport(
-                e instanceof Error ? e.message : String(e),
-                peer.url,
-                e,
-              ),
-      })
+      const cancel: Interface["cancel"] = ({ peer, taskId }) =>
+        Effect.tryPromise({
+          try: () => runCancel(peer, taskId, identity),
+          catch: (e) =>
+            e instanceof BinduError
+              ? e
+              : BinduError.transport(
+                  e instanceof Error ? e.message : String(e),
+                  peer.url,
+                  e,
+                ),
+        })
 
-    return Service.of({ callPeer, cancel })
-  }),
-)
+      return Service.of({ callPeer, cancel })
+    }),
+  )
+
+/** Default layer — no identity. ``did_signed`` peers will fail at
+ *  call time with a clear error pointing at ``makeLayer(identity)``. */
+export const layer = makeLayer(undefined)
 
 async function runCall(
   input: CallPeerInput,
   didResolver: ReturnType<typeof createResolver>,
+  identity: LocalIdentity | undefined,
 ): Promise<CallPeerOutcome> {
-  const headers = authHeaders(input.peer.auth)
-
   const parts: Part[] =
     typeof input.input === "string" ? [{ kind: "text", text: input.input }] : input.input
 
@@ -133,7 +152,8 @@ async function runCall(
 
   const outcome: SendAndPollOutcome = await sendAndPoll({
     peerUrl: input.peer.url,
-    headers,
+    auth: input.peer.auth,
+    identity,
     message,
     signal: input.signal,
     timeoutMs: input.timeoutMs,
@@ -188,10 +208,14 @@ async function maybeVerifySignatures(
   }
 }
 
-async function runCancel(peer: PeerDescriptor, taskId: string): Promise<void> {
+async function runCancel(
+  peer: PeerDescriptor,
+  taskId: string,
+  identity: LocalIdentity | undefined,
+): Promise<void> {
   const { cancel } = await import("./poll")
   await cancel(
-    { peerUrl: peer.url, headers: authHeaders(peer.auth) },
+    { peerUrl: peer.url, auth: peer.auth, identity },
     taskId,
   )
 }

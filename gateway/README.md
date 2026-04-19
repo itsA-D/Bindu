@@ -167,6 +167,44 @@ See [`plans/PLAN.md`](./plans/PLAN.md) §Architecture for the full picture.
 
 ---
 
+## DID signing for downstream peers
+
+The gateway can sign outbound A2A requests with an Ed25519 identity so DID-enforcing Bindu peers accept them. Needed for any peer you configure with `auth.type = "did_signed"`; ignored otherwise.
+
+To enable, set all three env vars:
+
+```bash
+# Generate a seed once and treat it as a secret:
+export BINDU_GATEWAY_DID_SEED="$(python -c 'import os,base64;print(base64.b64encode(os.urandom(32)).decode())')"
+export BINDU_GATEWAY_AUTHOR=ops@example.com
+export BINDU_GATEWAY_NAME=gateway
+```
+
+On boot the gateway logs its derived DID and public key. Register both with each peer's Hydra (as the gateway's OAuth client), obtain an access token, and point the peer config at the token env var:
+
+```json
+{
+  "peers": [
+    {
+      "url": "http://agent:3773",
+      "auth": { "type": "did_signed", "tokenEnvVar": "AGENT_HYDRA_TOKEN" }
+    }
+  ]
+}
+```
+
+The gateway will then:
+
+1. Serialize each JSON-RPC request body once.
+2. Sign those exact bytes with its private key (matching Python's `json.dumps(payload, sort_keys=True)` byte-for-byte — see `src/bindu/identity/local.ts`).
+3. Send `Authorization: Bearer <token>` + `X-DID`, `X-DID-Signature`, `X-DID-Timestamp` headers on the same request.
+
+If the seed env var is set but malformed, or only some of the three identity vars are set, the gateway refuses to boot with a clear error. Better to fail fast at startup than three layers deep in a peer call.
+
+Peers configured with `none` / `bearer` / `bearer_env` continue to work without identity. Leave the three env vars unset if no peer needs DID signing.
+
+---
+
 ## Tests
 
 ```bash
