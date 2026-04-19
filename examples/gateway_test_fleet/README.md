@@ -48,6 +48,38 @@ cd gateway && npm install && cd ..
 grep OPENROUTER_API_KEY examples/.env
 ```
 
+### Gateway env — required for the did_signed matrix
+
+`npm run dev` auto-loads `gateway/.env.local`. For the `auth: "did_signed"`
+cases in the matrix (which is all of them except Q8), that file MUST also
+contain the gateway's own DID identity + Hydra endpoints. The fleet's
+`.env.example` ships these commented out — uncomment and fill:
+
+```bash
+# gateway/.env.local — additions for the test matrix
+
+# 1. Gateway DID identity. Generate a fresh seed (once):
+#    python3 -c "import os,base64; print(base64.b64encode(os.urandom(32)).decode())"
+BINDU_GATEWAY_DID_SEED=<base64-seed>
+BINDU_GATEWAY_AUTHOR=you@example.com
+BINDU_GATEWAY_NAME=gateway
+
+# 2. Hydra endpoints (production defaults — change for self-hosted)
+BINDU_GATEWAY_HYDRA_ADMIN_URL=https://hydra-admin.getbindu.com
+BINDU_GATEWAY_HYDRA_TOKEN_URL=https://hydra.getbindu.com/oauth2/token
+```
+
+On first boot the gateway auto-registers with Hydra (idempotent — safe to
+restart). Look for `[bindu-gateway] Hydra registration confirmed for did:bindu:...`
+in the log.
+
+Without these vars set, `did_signed` calls fail with `did_signed peer
+requires a gateway LocalIdentity`. If you want to run the matrix against
+`auth: "none"` peers instead (faster bring-up, no Hydra dance), edit
+`run_matrix.sh` and change `AUTH_BLOCK` to `'"auth": { "type": "none" }'`
+— but note your agents must also be started with `AUTH__ENABLED=false`
+for that to round-trip.
+
 ## Bring the fleet up
 
 Two helper scripts:
