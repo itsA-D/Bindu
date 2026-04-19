@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot backfill script for the owner_did column.
+r"""One-shot backfill script for the owner_did column.
 
 Use this after deploying alembic revision 20260418_0001 (which adds the
 nullable owner_did column) and BEFORE rolling out the Phase 2 enforcement
@@ -12,9 +12,9 @@ Usage:
 
     python scripts/backfill_owner_did.py --owner-did did:bindu:legacy
     python scripts/backfill_owner_did.py --owner-did did:bindu:legacy --dry-run
-    python scripts/backfill_owner_did.py --owner-did did:bindu:legacy \\
-        --database-url postgresql+asyncpg://user:pw@host/bindu
-    python scripts/backfill_owner_did.py --owner-did did:bindu:legacy \\
+    python scripts/backfill_owner_did.py --owner-did did:bindu:legacy \
+        --database-url postgresql+asyncpg://user:pw@host/bindu  # pragma: allowlist secret
+    python scripts/backfill_owner_did.py --owner-did did:bindu:legacy \
         --schema did_bindu_alice
 
 ``--schema`` targets a single DID-specific schema created by the
@@ -43,7 +43,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     p.add_argument(
         "--owner-did",
         required=True,
@@ -97,12 +99,8 @@ async def _run(
         async with engine.begin() as conn:
             tasks_null = await _count_null(conn, schema, "tasks")
             contexts_null = await _count_null(conn, schema, "contexts")
-            print(
-                f"schema={schema} tasks.owner_did IS NULL: {tasks_null} rows"
-            )
-            print(
-                f"schema={schema} contexts.owner_did IS NULL: {contexts_null} rows"
-            )
+            print(f"schema={schema} tasks.owner_did IS NULL: {tasks_null} rows")
+            print(f"schema={schema} contexts.owner_did IS NULL: {contexts_null} rows")
 
             if dry_run:
                 print("--dry-run: rolling back, no data changed.")
@@ -140,6 +138,10 @@ def _resolve_database_url(explicit: str | None) -> str:
 
 
 def main(runner: Callable[..., Awaitable[int]] = _run) -> int:
+    """CLI entry point. Returns a process exit code.
+
+    ``runner`` is injectable for tests — defaults to the real ``_run``.
+    """
     args = _parse_args()
     database_url = _resolve_database_url(args.database_url)
     return asyncio.run(
