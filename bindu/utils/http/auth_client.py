@@ -79,12 +79,14 @@ class HybridAuthClient:
         logger.info(f"Access token obtained for {self.credentials.client_id}")
 
     def _create_signed_request_headers(
-        self, body: str | bytes | dict
+        self, body: str | bytes
     ) -> Dict[str, str]:
         """Create complete headers for signed request with OAuth token.
 
         Args:
-            body: Request body
+            body: Request body — must be a str or bytes (dict no longer
+                accepted, see bindu.utils.did.sign_request for the
+                contract).
 
         Returns:
             Dict with all required headers

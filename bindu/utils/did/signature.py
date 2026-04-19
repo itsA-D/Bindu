@@ -16,51 +16,88 @@ logger = get_logger("bindu.utils.did_signature")
 
 
 def create_signature_payload(
-    body: str | bytes | dict, did: str, timestamp: Optional[int] = None
+    body: str | bytes, did: str, timestamp: Optional[int] = None
 ) -> Dict[str, Any]:
-    """Create signature payload for request signing.
+    """Create the signature payload a signer or verifier should sign.
+
+    The returned dict is serialized with ``json.dumps(..., sort_keys=True)``
+    by the caller and passed to Ed25519. Signer and verifier MUST agree
+    on the exact bytes, which means they MUST agree on how ``body`` was
+    serialized to bytes before this function is called.
+
+    Only ``str`` and ``bytes`` are accepted. Passing ``dict`` used to
+    be supported with an implicit ``json.dumps(body, sort_keys=True)``
+    canonicalization, but that hid a serious footgun: a caller who
+    signed a dict got one signature, and the verifier on the server
+    side (which receives raw wire bytes, not a dict) got another for
+    the same logical body. The mismatch surfaced as
+    ``crypto_mismatch`` with no diagnostic hint about why.
+
+    The fix: callers must serialize their body to bytes *once* and use
+    those exact bytes for both the signing payload AND the HTTP body
+    they send on the wire. If you have a dict and need to sign it,
+    serialize it explicitly::
+
+        body_bytes = json.dumps(data).encode("utf-8")
+        headers    = sign_request(body_bytes, did, did_extension)
+        httpx.post(url, content=body_bytes, headers=headers)
 
     Args:
-        body: Request body (string, bytes, or dict)
+        body: Request body as a string or bytes. Dict inputs raise
+            ``TypeError`` — see above.
         did: Client's DID
         timestamp: Unix timestamp (defaults to current time)
 
     Returns:
-        Signature payload dict
+        Signature payload dict ``{"body": str, "did": str, "timestamp": int}``
+
+    Raises:
+        TypeError: If ``body`` is not ``str`` or ``bytes``.
     """
     if timestamp is None:
         timestamp = int(time.time())
 
-    # Convert body to string
-    if isinstance(body, dict):
-        body_str = json.dumps(body, sort_keys=True)
-    elif isinstance(body, bytes):
+    if isinstance(body, bytes):
         body_str = body.decode("utf-8")
+    elif isinstance(body, str):
+        body_str = body
     else:
-        body_str = str(body)
+        raise TypeError(
+            f"body must be str or bytes, got {type(body).__name__}. "
+            "If you have a dict, serialize it to bytes with "
+            "json.dumps(data).encode('utf-8') and use the same bytes "
+            "for both signing and the HTTP body."
+        )
 
     return {"body": body_str, "timestamp": timestamp, "did": did}
 
 
 def sign_request(
-    body: str | bytes | dict, did: str, did_extension, timestamp: Optional[int] = None
+    body: str | bytes, did: str, did_extension, timestamp: Optional[int] = None
 ) -> Dict[str, str]:
-    """Sign a request with DID private key.
+    """Sign a request with a DID private key.
+
+    See :func:`create_signature_payload` for the signer/verifier
+    contract — notably, ``body`` must be the exact bytes (or string)
+    that will appear on the wire. Dict inputs are rejected to prevent
+    a class of bugs where the signing and sending paths disagree on
+    canonicalization.
 
     Args:
-        body: Request body
+        body: Request body as a string or bytes.
         did: Client's DID
         did_extension: DIDExtension instance with private key
         timestamp: Unix timestamp (defaults to current time)
 
     Returns:
         Dict with signature headers (X-DID, X-DID-Signature, X-DID-Timestamp)
+
+    Raises:
+        TypeError: If ``body`` is not ``str`` or ``bytes``.
     """
-    # Create signature payload
     payload = create_signature_payload(body, did, timestamp)
     payload_str = json.dumps(payload, sort_keys=True)
 
-    # Sign with private key
     signature = did_extension.sign_message(payload_str)
 
     return {
