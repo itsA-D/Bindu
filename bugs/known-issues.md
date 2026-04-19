@@ -684,7 +684,6 @@ test for it in the same PR.
 | [`task-cancel-check-then-act-race`](#task-cancel-check-then-act-race) | medium | TOCTOU between state check and scheduler cancel |
 | [`no-rate-limit-or-quota-per-caller`](#no-rate-limit-or-quota-per-caller) | medium | No per-caller quota; single caller can exhaust resources |
 | [`context-id-silent-fallback`](#context-id-silent-fallback) | medium | Malformed `context_id` silently creates a new context |
-| [`did-signature-overbroad-exception-catch`](#did-signature-overbroad-exception-catch) | low (hyg) | Bare `except Exception` in `verify_signature` masks bugs |
 | [`artifact-name-not-sanitized`](#artifact-name-not-sanitized) | low (sec) | Agent-supplied artifact names not basenamed |
 
 ### High
@@ -981,24 +980,6 @@ The fix is to reject malformed UUIDs with a JSON-RPC error
 **Tracking:** _(no issue yet)_
 
 ### Low
-
-### did-signature-overbroad-exception-catch
-
-**Severity:** low (observability, security hygiene)
-**Summary:** `verify_signature` in
-[`bindu/utils/did/signature.py`](../bindu/utils/did/signature.py)
-catches `(BadSignatureError, ValueError, TypeError, Exception)` and
-returns `is_valid=False` for all of them. The broad tail-`Exception`
-masks real bugs (attribute errors, missing keys, base58 library
-faults) as ordinary signature failures, making incidents hard to
-diagnose and blurring the distinction between "malformed input" and
-"cryptographic fail."
-**Workaround:** Grep server logs for `Signature verification failed:`
-and inspect the exception class to tell bugs from bad signatures.
-Fix is to split decode from verify: catch `ValueError`/`TypeError`
-around base58 decode and return an explicit decode-error reason;
-catch only `BadSignatureError` around `verify_key.verify`.
-**Tracking:** _(no issue yet)_
 
 ### artifact-name-not-sanitized
 
