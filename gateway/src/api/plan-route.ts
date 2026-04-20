@@ -27,7 +27,7 @@ import type { z } from "zod"
  *      run the plan, then tear subscribers down via AbortSignal-driven
  *      `Stream.interruptWhen` so no PubSub fibers leak past the request.
  *
- * Contract (see gateway/plans/PLAN.md §API):
+ * Contract (see gateway/openapi.yaml §paths./plan):
  *   request:  { question, agents[], preferences?, session_id? }
  *   response: SSE stream — session, plan, text.delta*, task.started*,
  *             task.artifact*, task.finished*, final, done

@@ -83,8 +83,8 @@ export const AgentRequest = z.object({
 export type AgentRequest = z.infer<typeof AgentRequest>
 
 // Preferences on /plan — keys match the documented external API shape
-// in gateway/plans/PLAN.md: snake_case. An earlier draft declared them
-// camelCase (``responseFormat``/``maxHops``/``timeoutMs``/``maxSteps``);
+// in gateway/openapi.yaml §PlanPreferences: snake_case. An earlier draft
+// declared them camelCase (``responseFormat``/``maxHops``/``timeoutMs``/``maxSteps``);
 // clients sending docs-compliant ``max_steps`` landed on undefined
 // silently via ``.passthrough()``, dropping the cap and falling back
 // to ``plannerAgent.steps``. Aligning the schema with the docs fixes

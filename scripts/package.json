@@ -2,7 +2,7 @@
   "name": "@bindu/dryrun",
   "private": true,
   "type": "module",
-  "description": "Phase 0 dry-run scripts for the Bindu Gateway. See gateway/plans/phase-0-dryrun.md.",
+  "description": "Phase 0 protocol dry-run scripts for the Bindu Gateway: AgentCard + DID Doc fetch, message/send + tasks/get polling, signature verification against a live echo agent. Fixtures land at scripts/dryrun-fixtures/.",
   "scripts": {
     "dryrun": "tsx bindu-dryrun.ts"
   },

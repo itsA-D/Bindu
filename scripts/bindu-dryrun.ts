@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // Phase 0 protocol dry-run. Polling-first (Bindu task-first architecture).
 // Flow: AgentCard -> DID Doc -> /agent/skills -> /agent/negotiation -> message/send -> poll tasks/get -> verify.
-// See gateway/plans/phase-0-dryrun.md.
+// Captures real wire bytes at scripts/dryrun-fixtures/ so the gateway's
+// protocol tests can parse them bit-for-bit and catch drift.
 
 import { randomUUID } from "crypto"
 import * as ed25519 from "@noble/ed25519"
