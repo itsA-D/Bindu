@@ -376,6 +376,34 @@ pass. Anthropic calls this "tool use"; some people call it an
 The gateway's AI is called the **planner**. It plans the work;
 your agents execute it.
 
+### Aside — teaching the planner a reusable pattern (recipes)
+
+The three-agent chain above worked because the planner figured it
+out from scratch. That's fine once, but if your team keeps asking
+the same kind of question ("research X, compute Y% of it, poem
+about Z"), the planner is re-deriving the same plan every time.
+
+**Recipes** let you write that plan down in plain markdown and have
+the planner load it on demand. A recipe is a file in
+`gateway/recipes/` with YAML frontmatter (name + description) and
+a body that tells the planner what to do. The planner sees only the
+name + description in its system prompt; the full body only loads
+when it decides the recipe applies — that's "progressive disclosure"
+and it saves tokens on every plan that doesn't need the recipe.
+
+Two seed recipes ship with the gateway:
+
+- [`gateway/recipes/multi-agent-research/RECIPE.md`](../../gateway/recipes/multi-agent-research/RECIPE.md) —
+  how to chain a search agent and a summarizer.
+- [`gateway/recipes/payment-required-flow/RECIPE.md`](../../gateway/recipes/payment-required-flow/RECIPE.md) —
+  how to handle an agent that asks for payment before doing work.
+
+Drop a new `*.md` file (or `<name>/RECIPE.md` with bundled assets)
+into that directory, restart the gateway, and the planner sees it
+on its next plan. No code change. See the
+[gateway README §Recipes](../../gateway/README.md#recipes--progressive-disclosure-playbooks)
+for the frontmatter shape and permission model.
+
 ---
 
 ## Part 6 — Signed requests (optional for local, required for production)
@@ -524,6 +552,8 @@ directory.
 | **Tool** (planner) | In the planner's AI prompt, each agent's skill becomes one tool it can call. Named `call_{agent}_{skill}`. |
 | **Artifact** | The content returned by an agent for one task. |
 | **Skill** | One specific thing an agent can do. An agent can have several. The catalog in `/plan` lists them. |
+| **Recipe** | A markdown playbook the planner lazy-loads when a task matches. Lives in `gateway/recipes/`. Metadata (name + description) is always visible to the planner; the full body only loads on demand via an internal `load_recipe` tool. Lets operators encode repeatable multi-agent patterns without touching code. |
+| **OpenAPI** | The machine-readable contract for the gateway's HTTP API — paths, request shapes, SSE event types. Lives at [`gateway/openapi.yaml`](../../gateway/openapi.yaml). Use it to generate typed clients or to explore the full request/response surface without reading the code. |
 
 ---
 
@@ -539,3 +569,12 @@ directory.
 - Read the planner's own prompt at
   [`gateway/agents/planner.md`](../../gateway/agents/planner.md).
   That's the instructions the coordinator AI follows.
+- Browse [`gateway/openapi.yaml`](../../gateway/openapi.yaml) — the
+  machine-readable spec for `/plan`, `/health`, and every SSE event
+  type. Paste it into an OpenAPI viewer (Swagger UI, Redoc,
+  Stoplight) to click through request/response shapes.
+- Open a seed recipe like
+  [`gateway/recipes/multi-agent-research/RECIPE.md`](../../gateway/recipes/multi-agent-research/RECIPE.md)
+  and write your own. Any markdown file with `name:` and
+  `description:` in its frontmatter becomes available to the
+  planner on next restart — no code change.
