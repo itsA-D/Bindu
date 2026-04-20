@@ -13,12 +13,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "verbatimModuleSyntax": false,
-    "paths": {
-      "@/*": ["./src/*"],
-      "@opencode-ai/shared": ["./src/_shared/index.ts"],
-      "@opencode-ai/shared/*": ["./src/_shared/*.ts", "./src/_shared/*/index.ts", "./src/_shared/*"]
-    }
+    "verbatimModuleSyntax": false
   },
   "include": ["src/**/*", "tests/**/*", "scripts/**/*"]
 }
