@@ -6,172 +6,126 @@ A task-first orchestrator that sits between an **external system** and one or mo
 - **Planner = LLM:** no DAG engine, no separate orchestrator service. The planner agent's LLM decomposes the question and picks tools per turn.
 - **Agent catalog per request:** external system provides the list of agents + skills + endpoints. No fleet hosting here.
 - **Sessions persist in Supabase:** Postgres-backed with compaction + revert + multi-turn history.
-- **Native TS A2A 0.3.0:** no Python subprocess, no `@bindu/sdk` dependency. Calibrated against live deployed Bindu agents via Phase 0 dry-run fixtures.
+- **Native TS A2A:** no Python subprocess, no `@bindu/sdk` dependency.
 
-For design rationale, see [`plans/PLAN.md`](./plans/PLAN.md). Phase-by-phase detail lives in `plans/phase-*.md`.
+## New here?
 
----
+**Read [`docs/STORY.md`](./docs/STORY.md) first.** It's a 45-minute end-to-end walkthrough that goes from a clean clone to running three chained agents, authoring a recipe, and turning on DID signing. Written for readers with no prior AI-agent knowledge.
 
-## Status
-
-Phase 1 Days 1–9 shipped. Core gateway is functionally complete:
-
-- ✅ Bus, Config, DB (Supabase), Auth, Permission, Provider (Anthropic/OpenAI)
-- ✅ Tool registry + Agent/Recipe loaders (recipes = progressive-disclosure playbooks)
-- ✅ Session module (message, state, LLM stream, the **loop**, compaction, summary, revert, overflow detection)
-- ✅ Bindu protocol: Zod types for Message/Part/Artifact/Task/AgentCard, mixed-casing normalize, DID parse, JSON-RPC envelope, BinduError classification
-- ✅ Bindu identity: ed25519 verify (against real Phase 0 signatures)
-- ✅ Bindu polling client: `message/send` + `tasks/get` loop with camelCase-first + `-32700`/`-32602` retry flip
-- ✅ Planner: agent catalog → dynamic tools, compaction hook before each turn, `<remote_content>` envelope
-- ✅ Hono server + `/plan` SSE handler + `/health`
-- ✅ Layer-graph wiring in `src/index.ts`
-- ✅ **23 passing tests**, including integration against an in-process mock Bindu agent
-
-What's not done yet (Phase 2+ future commits):
-
-- Live smoke test against real Supabase + real Anthropic + real Bindu
-- Reconnect / `tasks/resubscribe`, tenancy enforcement, circuit breakers, rate limits, observability (Phase 2)
-- Inbound Bindu server + DID signing + mTLS (Phase 3)
-- Registry + trust scoring + cycle limits (Phase 4)
-- Payments, negotiation orchestrator, push notifications (Phase 5)
+This README is the **operator's reference** — configuration, troubleshooting, and pointers into source. The narrative lives in STORY.md.
 
 ---
 
 ## Quickstart
 
-### Prerequisites
-
-- **Node 22+** (tsx runs the TypeScript directly; no build step in dev)
-- **Supabase project** (free tier is fine). Copy `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
-- **Anthropic API key** (or OpenAI) for the planner LLM.
-
-### 1. Install deps
-
 ```bash
 cd gateway
 npm install
+cp .env.example .env.local    # fill in SUPABASE_*, GATEWAY_API_KEY, OPENROUTER_API_KEY
+npm run dev
 ```
 
-### 2. Apply the database schema
-
-From the Supabase SQL editor, run in order:
-
-```
-migrations/001_init.sql            # gateway_sessions, gateway_messages, gateway_tasks + RLS
-migrations/002_compaction_revert.sql  # adds compacted/reverted flags + compaction_summary
-```
-
-Or with the Supabase CLI:
-
-```bash
-bunx supabase link --project-ref <your-ref>
-bunx supabase db push
-```
-
-### 3. Configure
-
-Copy `.env.example` → `.env.local` and fill in:
-
-```bash
-SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
-GATEWAY_API_KEY=dev-key-change-me
-ANTHROPIC_API_KEY=sk-ant-...
-GATEWAY_PORT=3774
-```
-
-### 4. Run
-
-```bash
-npm run dev       # tsx watch src/index.ts
-# OR
-npm start         # tsx src/index.ts
-```
+Apply the two Supabase migrations first (`migrations/001_init.sql`, `migrations/002_compaction_revert.sql`). Full environment list below.
 
 Health check:
 
 ```bash
-curl http://localhost:3774/health
+curl -sS http://localhost:3774/health
 ```
 
-### 5. Fire a plan
+Returns a detailed JSON payload describing the gateway process — version, planner model, identity (if configured), recipe count, Node/platform details, and uptime. Matches the shape of the per-agent Bindu health payload with gateway-appropriate fields. See [`openapi.yaml`](./openapi.yaml) §HealthResponse for the full schema; the interesting fields:
 
-```bash
-curl -N -X POST http://localhost:3774/plan \
-  -H "Authorization: Bearer dev-key-change-me" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question": "Tell me about yourself",
-    "agents": [
-      {
-        "name": "echo",
-        "endpoint": "http://localhost:3773",
-        "auth": {"type": "none"},
-        "skills": [
-          {"id": "question-answering-v1", "description": "Answer questions"}
-        ]
-      }
-    ]
-  }'
+```json
+{
+  "version": "0.1.0",
+  "health": "healthy",
+  "runtime": {
+    "storage_backend": "Supabase",
+    "bus_backend": "EffectPubSub",
+    "planner": {
+      "model": "openrouter/anthropic/claude-sonnet-4.6",
+      "provider": "openrouter",
+      "model_id": "anthropic/claude-sonnet-4.6",
+      "temperature": 0.3,
+      "top_p": null,
+      "max_steps": 10
+    },
+    "recipe_count": 2,
+    "did_signing_enabled": true,
+    "hydra_integrated": true
+  },
+  "application": {
+    "name": "@bindu/gateway",
+    "session_mode": "stateful",
+    "gateway_did": "did:bindu:ops_at_example_com:gateway:47191e40-3e91-2ef4-d001-b8d005680279",
+    "gateway_id": "47191e40-3e91-2ef4-d001-b8d005680279",
+    "author": "ops_at_example_com"
+  },
+  "system": {
+    "node_version": "v22.5.0",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "environment": "development"
+  },
+  "status": "ok",
+  "ready": true,
+  "uptime_seconds": 23.3
+}
 ```
 
-You'll see SSE frames like:
-
-```
-event: plan
-data: {"plan_id":"…","session_id":"…"}
-
-event: task.started
-data: {"task_id":"…","agent":"echo","skill":"question-answering-v1","input":"\"Tell me about yourself\""}
-
-event: task.artifact
-data: {"task_id":"…","content":"<remote_content agent=\"echo\" verified=\"unknown\">…</remote_content>"}
-
-event: task.finished
-data: {"task_id":"…","state":"completed"}
-
-event: final
-data: {"session_id":"…","stop_reason":"stop","usage":{…}}
-
-event: session
-data: {"session_id":"…","external_session_id":null,"created":true}
-
-event: done
-data: {}
-```
+For a runnable multi-agent walkthrough, see [`docs/STORY.md`](./docs/STORY.md) §Chapter 2-3.
 
 ---
 
-## Architecture
+## Configuration
 
-Three-layer pipeline, one process:
+### Required environment variables
 
-```
-Hono HTTP (src/server + src/api)
-  └── POST /plan → Planner.startPlan(request)
-       └── SessionPrompt.prompt(sessionID, agent, parts, tools)
-            ├── SessionCompaction.compactIfNeeded  (before each turn)
-            ├── Provider.model(model)              (AI SDK handle)
-            ├── LLM.stream(model, messages, tools) (streamText wrapper)
-            │    └── for each tool call:
-            │         Bindu.Client.callPeer({peer, skill, input})
-            │           ├── auth headers (bearer | bearer_env | none)
-            │           ├── POST / method=message/send
-            │           ├── poll message/tasks/get (camelCase, -32700 flip)
-            │           ├── verify DID signatures when trust.verifyDID
-            │           └── return Task → ExecuteResult
-            └── Session persisted to Supabase via DB.Service
-```
+| Variable | Purpose |
+|---|---|
+| `SUPABASE_URL` | Session store — Postgres project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key (treat as secret) |
+| `GATEWAY_API_KEY` | Bearer token that callers must send |
+| `OPENROUTER_API_KEY` | Planner LLM provider |
 
-See [`plans/PLAN.md`](./plans/PLAN.md) §Architecture for the full picture.
+### Optional environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GATEWAY_PORT` | `3774` | HTTP port |
+| `GATEWAY_HOSTNAME` | `0.0.0.0` | Bind host |
+| `BINDU_GATEWAY_DID_SEED` | unset | Ed25519 private key seed (base64, 32 bytes) |
+| `BINDU_GATEWAY_AUTHOR` | unset | Owner email for DID |
+| `BINDU_GATEWAY_NAME` | unset | Short DID name component |
+| `BINDU_GATEWAY_HYDRA_ADMIN_URL` | unset | Hydra admin API (auto-register on boot) |
+| `BINDU_GATEWAY_HYDRA_TOKEN_URL` | unset | Hydra token endpoint |
+| `BINDU_GATEWAY_HYDRA_SCOPE` | `openid offline agent:read agent:write` | OAuth scopes |
+
+See `.env.example` for the full template.
+
+### Config file
+
+Some settings live in a TOML/JSON config file (path resolved hierarchically like OpenCode). Source of truth: [`src/config/schema.ts`](./src/config/schema.ts) — defaults are inline.
 
 ---
 
-## Recipes — progressive-disclosure playbooks
+## Routes
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `POST` | `/plan` | bearer | Open a plan or resume a session; streams SSE |
+| `GET` | `/health` | none | Liveness + config probe |
+| `GET` | `/.well-known/did.json` | none | Self-published DID document (only when DID identity is configured) |
+
+Full request/response contract with examples: [`openapi.yaml`](./openapi.yaml). Paste into [Swagger UI](https://editor.swagger.io) or Redoc to click through.
+
+---
+
+## Recipes
 
 Recipes are markdown playbooks the planner lazy-loads when a task matches. Only metadata (`name` + `description`) sits in the system prompt; the full body is fetched on demand via the `load_recipe` tool. Pattern borrowed from [OpenCode Skills](https://opencode.ai/docs/skills/), renamed to avoid collision with A2A `SkillRequest` (an agent capability on the `/plan` request body).
 
-**Why you'd write one:** to encode multi-agent orchestration patterns ("research question → search agent → summarizer"), handling rules for A2A states (`input-required`, `payment-required`, `auth-required`), or tenant-specific policies. Operators drop a markdown file in `gateway/recipes/` — no code change.
+**Author one in two minutes** — see [`docs/STORY.md`](./docs/STORY.md) §Chapter 4 for the walkthrough. The reference:
 
 ### Layouts
 
@@ -186,124 +140,84 @@ gateway/recipes/bar/reference/notes.md to the planner when bar loads
 
 ```yaml
 ---
-name: multi-agent-research          # required; falls back to filename/dir stem
-description: One-line summary that # required (non-empty) — shown in the
-  tells the planner when to load   # system prompt and tool description
-tags: [research, orchestration]    # optional
-triggers: [research, investigate]  # optional planner hints
+name: my-recipe                    # required, unique; cannot start with "call_"
+description: One-line summary      # required (non-empty) — this is the hook
+                                   # the planner reads when deciding to load
+tags: [domain, workflow]           # optional, surfaced in verbose listings
+triggers: [keyword1, keyword2]     # optional planner hints
 ---
 
-# Playbook body in markdown — free-form instructions the planner follows
-# after loading the recipe.
+# Playbook body — free-form markdown the planner follows after loading.
 ```
 
 ### Per-agent visibility
 
-Recipes respect the agent permission system. In an agent's frontmatter:
+Agents (in `gateway/agents/*.md`) respect `permission.recipe:` rules:
 
 ```yaml
 permission:
   recipe:
-    "secret-*": "deny"    # hide recipes matching the pattern from this agent
-    "*": "allow"          # everything else is visible
+    "secret-*": "deny"     # hide matching recipes from this agent
+    "*": "allow"           # everything else visible
 ```
 
 Default action is `allow` — an agent with no `recipe:` rules sees everything.
 
-### How it works end-to-end
+### Source pointers
 
-1. On each `/plan`, the planner calls `recipes.available(plannerAgent)`.
-2. The filtered list is (a) rendered into the system prompt as `<available_recipes>…</available_recipes>` and (b) used to generate the description of the `load_recipe` tool.
-3. When the planner decides a recipe applies, it calls `load_recipe({ name })`.
-4. The tool returns a `<recipe_content>` envelope with the full markdown and a `<recipe_files>` block listing bundled sibling files. The planner quotes or follows the body for the rest of the turn.
-
-See [`src/recipe/index.ts`](./src/recipe/index.ts) for the loader and [`src/tool/recipe.ts`](./src/tool/recipe.ts) for the tool. Two seed recipes live under [`recipes/`](./recipes/).
+- Loader: [`src/recipe/index.ts`](./src/recipe/index.ts)
+- `load_recipe` tool: [`src/tool/recipe.ts`](./src/tool/recipe.ts)
+- Seed recipes: [`recipes/`](./recipes/)
 
 ---
 
 ## DID signing for downstream peers
 
-The gateway can sign outbound A2A requests with an Ed25519 identity so DID-enforcing Bindu peers accept them. Needed for any peer you configure with `auth.type = "did_signed"`; ignored otherwise.
+For peers configured with `auth.type = "did_signed"`, the gateway signs each outbound A2A request with an Ed25519 identity. Peers verify against the gateway's public key (published at `/.well-known/did.json`) and reject mismatches.
+
+**Full walkthrough** — [`docs/STORY.md`](./docs/STORY.md) §Chapter 5. The reference:
 
 ### Two modes
 
 | Mode | When to use | Setup |
 |---|---|---|
 | **Auto** (recommended) | Single Hydra shared by the gateway and its peers | Set identity + Hydra URL env vars; gateway self-registers and auto-acquires tokens |
-| **Manual** (federated) | Peers use different Hydras | Set identity env vars; pre-register manually with each peer's Hydra; stash per-peer tokens in env vars |
+| **Manual** (federated) | Peers use different Hydras | Set identity env vars only; pre-register with each peer's Hydra out of band; stash per-peer tokens in env vars; use `tokenEnvVar` on the peer's `auth` block |
 
-### Auto mode setup
-
-```bash
-# Identity (same for both modes)
-export BINDU_GATEWAY_DID_SEED="$(python -c 'import os,base64;print(base64.b64encode(os.urandom(32)).decode())')"
-export BINDU_GATEWAY_AUTHOR=ops@example.com
-export BINDU_GATEWAY_NAME=gateway
-
-# Hydra auto-registration
-export BINDU_GATEWAY_HYDRA_ADMIN_URL=http://hydra:4445
-export BINDU_GATEWAY_HYDRA_TOKEN_URL=http://hydra:4444/oauth2/token
-# export BINDU_GATEWAY_HYDRA_SCOPE="openid offline agent:read agent:write"  # optional
-```
-
-On boot the gateway:
-
-1. Derives its DID and public key from the seed. Logs both.
-2. Registers itself with Hydra as an OAuth client (`client_id` = the DID, `metadata.public_key` = the base58 public key). Idempotent — safe to restart.
-3. Acquires an access token via `client_credentials`. In-memory cache + proactive refresh 30s before expiry.
-
-Peer config for auto mode:
+### Peer config — auto mode
 
 ```json
 { "url": "http://agent:3773", "auth": { "type": "did_signed" } }
 ```
 
-No `tokenEnvVar` needed — the gateway pulls the token from its cached Hydra provider.
-
-### Manual mode setup (federated)
-
-Each peer uses its own Hydra. The gateway holds a token per peer, supplied via env vars:
-
-```bash
-# Identity only — no Hydra auto vars
-export BINDU_GATEWAY_DID_SEED="..."
-export BINDU_GATEWAY_AUTHOR=ops@example.com
-export BINDU_GATEWAY_NAME=gateway
-
-# One token per peer
-export RESEARCH_HYDRA_TOKEN="$(hydra token client ...)"
-export SUPPORT_HYDRA_TOKEN="$(hydra token client ...)"
-```
-
-Peer config:
+### Peer config — manual mode
 
 ```json
-{ "url": "http://research:3773", "auth": { "type": "did_signed", "tokenEnvVar": "RESEARCH_HYDRA_TOKEN" } },
-{ "url": "http://support:3773",  "auth": { "type": "did_signed", "tokenEnvVar": "SUPPORT_HYDRA_TOKEN" } }
+{ "url": "http://research:3773", "auth": { "type": "did_signed", "tokenEnvVar": "RESEARCH_HYDRA_TOKEN" } }
 ```
 
-Mix-and-match is fine too: a peer with `tokenEnvVar` set uses that env var even when the auto provider is also configured (peer-scoped wins).
+A peer-scoped `tokenEnvVar` wins over the auto provider, so mixing is fine.
 
-### What happens on the wire
+### Wire format
 
-For every outbound call to a `did_signed` peer:
+For every outbound `did_signed` call:
 
-1. Serialize the JSON-RPC request body once.
-2. Sign those exact bytes with the gateway's private key. Matches Python's `json.dumps(payload, sort_keys=True)` byte-for-byte — see `src/bindu/identity/local.ts`.
-3. Send `Authorization: Bearer <token>` + `X-DID`, `X-DID-Signature`, `X-DID-Timestamp` headers on the same request.
+1. Serialize the JSON-RPC request body once (matches Python's `json.dumps(payload, sort_keys=True)` byte-for-byte — see [`src/bindu/identity/local.ts`](./src/bindu/identity/local.ts)).
+2. Sign those exact bytes with the gateway's private key.
+3. Attach `Authorization: Bearer <token>` + `X-DID`, `X-DID-Signature`, `X-DID-Timestamp` headers.
 
-### Failure modes — all fail fast with clear errors
+### Failure modes
 
 | Scenario | When | Error |
 |---|---|---|
 | Seed malformed | Boot | `BINDU_GATEWAY_DID_SEED must decode to exactly 32 bytes` |
 | Partial identity config | Boot | `Partial DID identity config — set all three or none` |
-| Partial Hydra config (admin without token or vice versa) | Boot | `Partial Hydra config — set both or neither` |
+| Partial Hydra config | Boot | `Partial Hydra config — set both or neither` |
 | Hydra admin unreachable | Boot | `Hydra admin GET /admin/clients/... returned 503: ...` |
-| `did_signed` peer but no identity | First call | `did_signed peer requires a gateway LocalIdentity` |
-| `did_signed` peer with no tokenEnvVar and no provider | First call | clear error naming both options |
+| `did_signed` peer, no identity | First call | `did_signed peer requires a gateway LocalIdentity` |
+| `did_signed` peer, no tokenEnvVar, no provider | First call | names both options in the error |
 
-Peers configured with `none` / `bearer` / `bearer_env` continue to work with or without DID identity. Leave the env vars unset if no peer needs DID signing.
+Peers configured with `none` / `bearer` / `bearer_env` continue to work with or without DID identity — leave the env vars unset if no peer needs signing.
 
 ---
 
@@ -315,12 +229,7 @@ npm run test:watch # vitest watch
 npm run typecheck  # tsc --noEmit
 ```
 
-| Test file | Count | What it covers |
-|---|---|---|
-| `tests/bindu/protocol.test.ts` | 12 | Parses Phase 0 fixtures; casing normalize round-trips; DID parse; BinduError classification |
-| `tests/bindu/identity.test.ts` | 4 | Verifies a real signature against the captured echo-agent DID Doc (tamper detection, malformed signature) |
-| `tests/bindu/poll.test.ts` | 4 | Mock-fetch polling: submitted→completed, `-32700` casing flip, `input-required` needsAction, `-32013` InsufficientPermissions |
-| `tests/integration/bindu-client-e2e.test.ts` | 3 | In-process mock Bindu agent on a random port; end-to-end `sendAndPoll` round-trip |
+Unit + integration coverage across bindu/, recipe/, planner/, session/, api/, provider/. Check the current count with `npm test`; the suite is under two seconds.
 
 **Phase 0 dry-run fixtures** live at `../scripts/dryrun-fixtures/echo-agent/` and were captured against a running `bindu` Python reference agent. The protocol tests parse them bit-for-bit so any schema drift fails CI immediately.
 
@@ -331,50 +240,42 @@ npm run typecheck  # tsc --noEmit
 ```
 gateway/
 ├── .env.example              # env var template
+├── openapi.yaml              # machine-readable API contract
 ├── package.json              # @bindu/gateway
 ├── tsconfig.json             # strict, ES2023, path aliases
 ├── vitest.config.ts          # test config (loads .env.local)
+├── docs/
+│   └── STORY.md              # end-to-end walkthrough — the primary read
 ├── migrations/               # Supabase SQL
-│   ├── 001_init.sql
-│   └── 002_compaction_revert.sql
 ├── agents/                   # markdown+YAML agent configs
 │   └── planner.md            # the default planner system prompt
-├── plans/                    # Design docs (PLAN.md + phase-*.md)
+├── recipes/                  # markdown playbooks (progressive disclosure)
 ├── src/
-│   ├── _shared/              # vendored @opencode-ai/shared
-│   ├── effect/               # Effect runtime glue (from OpenCode)
-│   ├── util/                 # logger, filesystem, error helpers (from OpenCode)
-│   ├── id/                   # ID generators
-│   ├── global/               # XDG paths
-│   ├── bus/                  # FRESH — typed event bus
-│   ├── config/               # FRESH — hierarchical config loader
-│   ├── db/                   # FRESH — Supabase adapter
-│   ├── auth/                 # FRESH — credential keystore
-│   ├── permission/           # FRESH — wildcard ruleset evaluator
-│   ├── provider/             # FRESH — AI SDK handle lookup
-│   ├── skill/                # FRESH — markdown skill loader
-│   ├── agent/                # FRESH — agent.md loader
-│   ├── tool/                 # FRESH — Tool.define + registry
-│   ├── session/              # FRESH — message, service, LLM stream,
-│   │                         #         the loop, compaction, revert
-│   ├── bindu/                # FRESH — Bindu A2A: protocol, identity,
-│   │                         #         auth, client
-│   ├── planner/              # FRESH — agent catalog → dynamic tools
-│   ├── server/               # FRESH — Hono shell + /health
-│   ├── api/                  # FRESH — POST /plan + SSE emitter
-│   └── index.ts              # FRESH — Layer graph + boot
-└── tests/
-    ├── bindu/                # protocol, identity, poll unit tests
-    ├── helpers/              # mock-bindu-agent.ts
-    └── integration/          # bindu-client-e2e.test.ts
+│   ├── _shared/, effect/, util/, id/, global/    # vendored from OpenCode
+│   ├── bus/                  # typed event bus
+│   ├── config/               # hierarchical config loader
+│   ├── db/                   # Supabase adapter
+│   ├── auth/                 # credential keystore
+│   ├── permission/           # wildcard ruleset evaluator
+│   ├── provider/             # AI SDK handle lookup (OpenRouter)
+│   ├── recipe/               # markdown recipe loader
+│   ├── agent/                # agent.md loader
+│   ├── tool/                 # Tool.define + registry + load_recipe
+│   ├── session/              # message, service, LLM stream, loop, compaction
+│   ├── bindu/                # Bindu A2A: protocol, identity, auth, client
+│   ├── planner/              # agent catalog → dynamic tools + tool-id collision guard
+│   ├── server/               # Hono shell + /health
+│   ├── api/                  # POST /plan + SSE emitter
+│   └── index.ts              # Layer graph + boot
+└── tests/                    # unit + integration suites
 ```
 
-**Fresh = Bindu-native, written for the gateway.** **From OpenCode** = copied + trimmed of coding-specific features (no LSP, no git, no bash/edit tools, no IDE integration).
+Modules vendored from [sst/opencode](https://github.com/sst/opencode) (MIT-licensed) handle Effect runtime glue and generic utilities (logger, filesystem, ids, XDG paths). Everything else is Bindu-native — written for the gateway, not inherited from OpenCode's coding-tool focus.
 
 ---
 
 ## License + credits
 
-Apache-2.0 (matches the Bindu monorepo).
+Apache-2.0.
 
-The gateway borrows the Effect runtime glue and utility modules from [sst/opencode](https://github.com/sst/opencode) (MIT). Vendored at `src/_shared/` and `src/{effect,util,id,global}/`. See [`plans/PLAN.md`](./plans/PLAN.md) §Fork & Extract Plan for the full list of what was copied vs rewritten.
+Effect runtime glue + generic utility modules vendored from [sst/opencode](https://github.com/sst/opencode) at `src/_shared/` and `src/{effect,util,id,global}/`. Coding-specific features (LSP, git, bash/edit tools, IDE integration) were intentionally not carried over — the gateway is a multi-agent orchestrator, not a coding shell.

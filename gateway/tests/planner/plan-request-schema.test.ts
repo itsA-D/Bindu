@@ -10,7 +10,7 @@
  *
  *   2. ``PlanPreferences`` keys were camelCase (``maxSteps``,
  *      ``timeoutMs``, ``responseFormat``) but the documented external
- *      API in ``gateway/plans/PLAN.md`` uses snake_case
+ *      API in ``gateway/openapi.yaml`` uses snake_case
  *      (``max_steps``, ``timeout_ms``, ``response_format``).
  *      ``.passthrough()`` kept the request valid but dropped the
  *      values on the floor — ``request.preferences?.maxSteps`` was

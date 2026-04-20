@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming"
 import {
   PlanRequest,
   Service as PlannerService,
+  findDuplicateToolIds,
   type Interface as PlannerInterface,
   type SessionContext,
 } from "../planner"
@@ -26,7 +27,7 @@ import type { z } from "zod"
  *      run the plan, then tear subscribers down via AbortSignal-driven
  *      `Stream.interruptWhen` so no PubSub fibers leak past the request.
  *
- * Contract (see gateway/plans/PLAN.md §API):
+ * Contract (see gateway/openapi.yaml §paths./plan):
  *   request:  { question, agents[], preferences?, session_id? }
  *   response: SSE stream — session, plan, text.delta*, task.started*,
  *             task.artifact*, task.finished*, final, done
@@ -65,6 +66,30 @@ async function handleRequest(
     request = PlanRequest.parse(body)
   } catch (e) {
     return c.json({ error: "invalid_request", detail: (e as Error).message }, 400)
+  }
+
+  // 2a. Reject catalogs that would produce colliding tool ids — silent
+  //     last-write-wins in the AI SDK's toolMap was masking caller bugs
+  //     (two entries with the same agent name + skill id, or underscores
+  //     vs dots in agent names flattening to the same normalized id).
+  //     The caller needs to know; give them a clean 400.
+  const collisions = findDuplicateToolIds(request.agents)
+  if (collisions) {
+    const detail = collisions
+      .map(
+        (c) =>
+          `toolId "${c.toolId}" produced by: ${c.entries
+            .map((e) => `${e.agentName}/${e.skillId}`)
+            .join(", ")}`,
+      )
+      .join("; ")
+    return c.json(
+      {
+        error: "invalid_request",
+        detail: `agents catalog has colliding tool ids — ${detail}`,
+      },
+      400,
+    )
   }
 
   // 3. Resolve session BEFORE opening SSE — required so subscribers can
@@ -144,6 +169,15 @@ async function handleRequest(
 
     spawnReader(ac.signal, ownEvent(bus.subscribe(PromptEvent.ToolCallEnd)), async (evt) => {
       const agentName = parseAgentFromTool(evt.properties.tool)
+      // Only attach `signatures` when the tool explicitly reported a
+      // verification outcome. A `null` here means the tool ran
+      // verification but skipped (no pinnedDID, or DID doc resolution
+      // failed) — still worth surfacing so operators can tell
+      // "skipped" apart from "not attempted" (the latter is absence).
+      const sigField =
+        evt.properties.signatures !== undefined
+          ? { signatures: evt.properties.signatures }
+          : {}
       await stream.writeSSE({
         event: "task.artifact",
         data: JSON.stringify({
@@ -152,6 +186,7 @@ async function handleRequest(
           agent_did: findPinnedDID(request, agentName),
           content: evt.properties.output,
           title: evt.properties.title,
+          ...sigField,
         }),
       })
       await stream.writeSSE({
@@ -162,6 +197,7 @@ async function handleRequest(
           agent_did: findPinnedDID(request, agentName),
           state: evt.properties.error ? "failed" : "completed",
           ...(evt.properties.error ? { error: evt.properties.error } : {}),
+          ...sigField,
         }),
       })
     })

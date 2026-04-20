@@ -83,8 +83,8 @@ export const AgentRequest = z.object({
 export type AgentRequest = z.infer<typeof AgentRequest>
 
 // Preferences on /plan — keys match the documented external API shape
-// in gateway/plans/PLAN.md: snake_case. An earlier draft declared them
-// camelCase (``responseFormat``/``maxHops``/``timeoutMs``/``maxSteps``);
+// in gateway/openapi.yaml §PlanPreferences: snake_case. An earlier draft
+// declared them camelCase (``responseFormat``/``maxHops``/``timeoutMs``/``maxSteps``);
 // clients sending docs-compliant ``max_steps`` landed on undefined
 // silently via ``.passthrough()``, dropping the cap and falling back
 // to ``plannerAgent.steps``. Aligning the schema with the docs fixes
@@ -435,8 +435,50 @@ function buildSkillTool(peer: PeerDescriptor, skill: SkillRequest, deps: BuildTo
   }
 }
 
-function normalizeToolName(raw: string): string {
+export function normalizeToolName(raw: string): string {
   return raw.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 80)
+}
+
+/**
+ * Detect (agent, skill) pairs that would produce colliding tool ids after
+ * normalization. Returns the list of collisions (one entry per clashing
+ * toolId), or `null` when the catalog is clean.
+ *
+ * Three real flavors of collision this catches:
+ *   1. Two agent entries with the same `name` and same skill `id`.
+ *   2. One agent with a duplicated skill `id` in its `skills` array.
+ *   3. Non-alphanumerics that flatten to the same normalized id
+ *      (e.g., agent "foo.bar" and agent "foo_bar" both normalize to
+ *      "call_foo_bar_*"). Rare but real.
+ *
+ * Silent last-write-wins (the previous behavior in session/prompt.ts's
+ * `toolMap` assignment) made the planner invoke whichever entry happened
+ * to land last in the agents[] array. A caller that thinks they're
+ * load-balancing across two peers sees only one being called — and
+ * worse, which one is undefined. Better to reject the request.
+ */
+export interface ToolIdCollision {
+  readonly toolId: string
+  readonly entries: ReadonlyArray<{ agentName: string; skillId: string }>
+}
+
+export function findDuplicateToolIds(
+  agents: ReadonlyArray<AgentRequest>,
+): ToolIdCollision[] | null {
+  const byToolId = new Map<string, Array<{ agentName: string; skillId: string }>>()
+  for (const ag of agents) {
+    for (const sk of ag.skills) {
+      const toolId = normalizeToolName(`call_${ag.name}_${sk.id}`)
+      const bucket = byToolId.get(toolId)
+      if (bucket) bucket.push({ agentName: ag.name, skillId: sk.id })
+      else byToolId.set(toolId, [{ agentName: ag.name, skillId: sk.id }])
+    }
+  }
+  const collisions: ToolIdCollision[] = []
+  for (const [toolId, entries] of byToolId) {
+    if (entries.length > 1) collisions.push({ toolId, entries })
+  }
+  return collisions.length > 0 ? collisions : null
 }
 
 /**
